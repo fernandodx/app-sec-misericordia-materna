@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "766981626039",
+    "project_id": "misericordia-materna-sec",
+    "storage_bucket": "misericordia-materna-sec.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:766981626039:android:635e1dc8c9c81b494b9532",
+        "android_client_info": {
+          "package_name": "br.com.misericordia.materna.app_secretaria"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "766981626039-ra1v15jkp2cja68k6tjt57dsgi74f2bq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAdd4l1Byv53Itj2kUNn8aEM38P7JU_WY8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "766981626039-ra1v15jkp2cja68k6tjt57dsgi74f2bq.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

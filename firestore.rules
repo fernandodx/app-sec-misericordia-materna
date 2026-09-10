@@ -1,0 +1,64 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Função auxiliar para verificar se está autenticado
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Função para verificar se é o Fundador
+    function isFundador() {
+      return isAuthenticated() && (
+        request.auth.token.email == 'nando.djx@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'fundador')
+      );
+    }
+
+    function isSecretariaOrFundador() {
+      return isFundador() || (
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in [
+          'secretaria_geral_ext',
+          'secretaria_geral_int',
+          'secretaria_local'
+        ]
+      );
+    }
+
+    // Coleção de Usuários / Membros
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      // O próprio usuário pode criar seu documento, o Fundador tem poder total, ou parceiro vinculando
+      allow create: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        isFundador() ||
+        (
+          request.resource.data.spouseId == request.auth.uid &&
+          request.resource.data.isCasado == true
+        )
+      );
+      // O próprio usuário pode atualizar sua ficha, o Fundador ou Secretarias têm poder de gestão,
+      // ou um usuário autenticado pode vincular seu próprio UID como spouseId no perfil do parceiro
+      allow update: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        isSecretariaOrFundador() ||
+        (
+          request.resource.data.spouseId == request.auth.uid &&
+          request.resource.data.isCasado == true
+        )
+      );
+      allow delete: if isFundador();
+    }
+
+    // Coleção de Convites
+    match /invites/{inviteId} {
+      // Leitura permitida para quem possui o link/código validar o convite
+      allow read: if true;
+      // Criação e revogação apenas por perfis autenticados autorizados
+      allow create, update: if isAuthenticated();
+      allow delete: if isFundador();
+    }
+  }
+}
