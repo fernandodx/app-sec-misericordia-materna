@@ -7,6 +7,7 @@ import '../../../core/constants/localidades.dart';
 import '../../../domain/entities/invite_entity.dart';
 import '../../signals/auth_signal.dart';
 import '../../signals/invite_signal.dart';
+import '../../widgets/theme_selector_widget.dart';
 
 class InvitesManagementPage extends StatefulWidget {
   const InvitesManagementPage({super.key});
@@ -222,8 +223,21 @@ class _InvitesManagementPageState extends State<InvitesManagementPage> {
             Text('Código: ${invite.id}', style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
             Text('Perfil: ${invite.targetRole.label}'),
-            if (invite.localidade != null)
+            if (invite.targetEmail != null && invite.targetEmail!.trim().isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                'E-mail Convidado: ${invite.targetEmail}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
+            if (invite.tipoVida != null) ...[
+              const SizedBox(height: 4),
+              Text('Tipo de Vida: ${invite.tipoVida!.label}'),
+            ],
+            if (invite.localidade != null) ...[
+              const SizedBox(height: 4),
               Text('Localidade: ${Localidades.nomePorSigla(invite.localidade)}'),
+            ],
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
@@ -280,6 +294,10 @@ class _InvitesManagementPageState extends State<InvitesManagementPage> {
         return Scaffold(
       appBar: AppBar(
         title: const Text('Gerenciar Convites'),
+        actions: const [
+          ThemeSelectorButton(),
+          SizedBox(width: 8),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showCreateInviteDialog,
@@ -297,7 +315,7 @@ class _InvitesManagementPageState extends State<InvitesManagementPage> {
                     // Header de Resumo
                     Card(
                       elevation: 0,
-                      color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+                      color: colorScheme.surfaceContainerHigh,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                         side: BorderSide(color: colorScheme.outlineVariant),
@@ -306,7 +324,25 @@ class _InvitesManagementPageState extends State<InvitesManagementPage> {
                         padding: const EdgeInsets.all(16),
                         child: Row(
                           children: [
-                            Icon(Icons.shield_outlined, color: colorScheme.primary, size: 32),
+                            Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: colorScheme.surface,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: colorScheme.outlineVariant),
+                              ),
+                              padding: const EdgeInsets.all(6),
+                              child: Image.asset(
+                                'assets/img/logo_fraternidade.png',
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, _, _) => Icon(
+                                  Icons.shield_outlined,
+                                  color: colorScheme.primary,
+                                  size: 24,
+                                ),
+                              ),
+                            ),
                             const SizedBox(width: 16),
                             Expanded(
                               child: Column(
@@ -319,9 +355,12 @@ class _InvitesManagementPageState extends State<InvitesManagementPage> {
                                       color: colorScheme.primary,
                                     ),
                                   ),
+                                  const SizedBox(height: 2),
                                   Text(
                                     'Logado como: ${user?.role.label ?? ""} (${user?.email ?? ""})',
-                                    style: theme.textTheme.bodySmall,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -361,21 +400,81 @@ class _InvitesManagementPageState extends State<InvitesManagementPage> {
                           child: ListTile(
                             leading: CircleAvatar(
                               backgroundColor: isPending
-                                  ? colorScheme.primaryContainer
+                                  ? colorScheme.primary
                                   : colorScheme.surfaceContainerHighest,
+                              foregroundColor: isPending
+                                  ? colorScheme.onPrimary
+                                  : colorScheme.onSurfaceVariant,
                               child: Icon(
                                 isPending ? Icons.mark_email_unread_outlined : Icons.check,
-                                color: isPending ? colorScheme.primary : colorScheme.outline,
                               ),
                             ),
-                            title: Text(
-                              invite.targetRole.label,
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            title: Row(
+                              children: [
+                                Text(
+                                  invite.targetRole.label,
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                if (invite.tipoVida != null) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: invite.tipoVida == TipoVida.interna
+                                          ? colorScheme.tertiaryContainer
+                                          : colorScheme.secondaryContainer,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      invite.tipoVida!.label,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: invite.tipoVida == TipoVida.interna
+                                            ? colorScheme.onTertiaryContainer
+                                            : colorScheme.onSecondaryContainer,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const SizedBox(height: 4),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      (invite.targetEmail != null && invite.targetEmail!.trim().isNotEmpty)
+                                          ? Icons.email_outlined
+                                          : Icons.public,
+                                      size: 15,
+                                      color: (invite.targetEmail != null && invite.targetEmail!.trim().isNotEmpty)
+                                          ? colorScheme.primary
+                                          : colorScheme.outline,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        (invite.targetEmail != null && invite.targetEmail!.trim().isNotEmpty)
+                                            ? 'E-mail Convidado: ${invite.targetEmail}'
+                                            : 'E-mail Convidado: Aberto a qualquer e-mail',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: (invite.targetEmail != null && invite.targetEmail!.trim().isNotEmpty)
+                                              ? FontWeight.bold
+                                              : FontWeight.normal,
+                                          color: (invite.targetEmail != null && invite.targetEmail!.trim().isNotEmpty)
+                                              ? colorScheme.onSurface
+                                              : colorScheme.onSurfaceVariant,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
                                 SelectableText(
                                   invite.linkOficial,
                                   style: TextStyle(
@@ -386,7 +485,8 @@ class _InvitesManagementPageState extends State<InvitesManagementPage> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'Status: ${invite.status.label}${invite.isExpired ? " (Expirado)" : ""} • Local: ${Localidades.nomePorSigla(invite.localidade)}',
+                                  'Status: ${invite.status.label}${invite.isExpired ? " (Expirado)" : ""}'
+                                  '${invite.localidade != null ? " • Local: ${Localidades.nomePorSigla(invite.localidade)}" : ""}',
                                   style: TextStyle(fontSize: 12, color: colorScheme.outline),
                                 ),
                               ],

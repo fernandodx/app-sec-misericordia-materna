@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 import '../../signals/auth_signal.dart';
 
+import '../../widgets/theme_selector_widget.dart';
+
 class VerifyEmailPage extends StatefulWidget {
   const VerifyEmailPage({super.key});
 
@@ -14,30 +16,38 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
   bool _isResending = false;
 
   Future<void> _checkEmail() async {
-    setState(() => _isChecking = true);
-    final verified = await authSignal.checkEmailVerified();
-    setState(() => _isChecking = false);
-
-    if (!verified && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Seu e-mail ainda não foi confirmado. Por favor, acesse o link enviado.'),
-        ),
-      );
+    try {
+      setState(() => _isChecking = true);
+      final verified = await authSignal.checkEmailVerified();
+      if (!verified && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Seu e-mail ainda não foi confirmado. Por favor, acesse o link enviado.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isChecking = false);
+      }
     }
   }
 
   Future<void> _resendEmail() async {
-    setState(() => _isResending = true);
-    await authSignal.sendVerificationEmail();
-    setState(() => _isResending = false);
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Link de verificação reenviado com sucesso! Verifique sua caixa de entrada e spam.'),
-        ),
-      );
+    try {
+      setState(() => _isResending = true);
+      await authSignal.sendVerificationEmail();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Link de verificação reenviado com sucesso! Verifique sua caixa de entrada e spam.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isResending = false);
+      }
     }
   }
 
@@ -51,7 +61,15 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
         final user = authSignal.currentUser.value;
 
         return Scaffold(
-      body: SafeArea(
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            actions: const [
+              ThemeSelectorButton(),
+              SizedBox(width: 8),
+            ],
+          ),
+          body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
@@ -61,16 +79,18 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: colorScheme.primaryContainer.withValues(alpha: 0.35),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.mark_email_unread_outlined,
-                      size: 64,
-                      color: colorScheme.primary,
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.mark_email_unread_outlined,
+                        size: 56,
+                        color: colorScheme.onPrimary,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),

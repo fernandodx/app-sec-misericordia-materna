@@ -45,13 +45,42 @@ enum AppRole {
       isSecretariaLocal ||
       isFormador;
 
-  bool get canEditMemberInstitutional =>
-      isFundador ||
-      isSecretariaGeralExterna ||
-      isSecretariaGeralInterna ||
-      isSecretariaLocal;
+  /// Os mesmos perfis que podem consultar membros também podem alterar dados institucionais
+  bool get canEditMemberInstitutional => canSearchMembers;
 
   bool get canAccessDashboard => !isVisitante;
+
+  /// Lista de papéis que o perfil atual tem permissão de atribuir a outro usuário
+  List<AppRole> get rolesPermitidasParaAtribuir {
+    switch (this) {
+      case AppRole.fundador:
+        // Somente o Fundador pode nomear outro Fundador (e qualquer outro perfil)
+        return AppRole.values.toList();
+
+      case AppRole.secretariaGeralExterna:
+      case AppRole.secretariaGeralInterna:
+      case AppRole.formador:
+        // Secretaria Geral e Formador podem alterar para qualquer um, menos Fundador
+        return AppRole.values.where((r) => r != AppRole.fundador).toList();
+
+      case AppRole.secretariaLocal:
+        // Secretaria Local pode mudar para todos os perfis abaixo de Secretaria Geral
+        return AppRole.values
+            .where((r) =>
+                r != AppRole.fundador &&
+                r != AppRole.secretariaGeralExterna &&
+                r != AppRole.secretariaGeralInterna)
+            .toList();
+
+      default:
+        return [];
+    }
+  }
+
+  /// Valida se o perfil atual pode atribuir um papel específico
+  bool podeAtribuirRole(AppRole roleAlvo) {
+    return rolesPermitidasParaAtribuir.contains(roleAlvo);
+  }
 }
 
 enum TipoVida {
@@ -65,10 +94,11 @@ enum TipoVida {
 
   static TipoVida? fromKey(String? key) {
     if (key == null) return null;
-    return TipoVida.values.firstWhere(
-      (t) => t.key == key,
-      orElse: () => TipoVida.externa,
-    );
+    final clean = key.trim().toLowerCase();
+    if (clean.isEmpty) return null;
+    if (clean.contains('interna')) return TipoVida.interna;
+    if (clean.contains('externa')) return TipoVida.externa;
+    return null;
   }
 
   String get displayName => label;

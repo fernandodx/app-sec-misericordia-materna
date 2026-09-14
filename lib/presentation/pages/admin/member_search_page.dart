@@ -2,13 +2,15 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_roles.dart';
+import '../../../core/constants/cadastro_constants.dart';
 import '../../../core/constants/localidades.dart';
 import '../../../domain/entities/user_entity.dart';
 import '../../signals/auth_signal.dart';
 import '../../signals/member_search_signal.dart';
 import '../../widgets/member_detail_dialog.dart';
+import '../../widgets/theme_selector_widget.dart';
+import 'member_edit_page.dart';
 
 class MemberSearchPage extends StatefulWidget {
   const MemberSearchPage({super.key});
@@ -20,15 +22,19 @@ class MemberSearchPage extends StatefulWidget {
 class _MemberSearchPageState extends State<MemberSearchPage> {
   final _searchController = TextEditingController();
 
-  final List<String> _etapasPossiveis = const [
-    'Aspirantado',
-    'Postulantado I',
-    'Postulantado II',
-    'Noviciado I',
-    'Noviciado II',
-    'Consagrado',
-    'Formador',
-  ];
+  List<String> get _etapasDisponiveis {
+    final tipoVida = memberSearchSignal.filterTipoVida.value;
+    if (tipoVida == TipoVida.interna) {
+      return CadastroConstants.etapasVidaInterna;
+    } else if (tipoVida == TipoVida.externa) {
+      return CadastroConstants.etapasVidaExterna;
+    } else {
+      return [
+        ...CadastroConstants.etapasVidaExterna,
+        ...CadastroConstants.etapasVidaInterna,
+      ];
+    }
+  }
 
   @override
   void initState() {
@@ -47,52 +53,56 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
 
   Future<void> _abrirWhatsApp(String? telefone) async {
     if (telefone == null || telefone.isEmpty) return;
-    final digits = telefone.replaceAll(RegExp(r'\D'), '');
-    if (digits.isEmpty) return;
-    final url = Uri.parse('https://wa.me/55$digits');
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
+    final cleanDigits = telefone.replaceAll(RegExp(r'\D'), '');
+    final uri = Uri.parse('https://wa.me/55$cleanDigits');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
   Future<void> _abrirEmail(String email) async {
-    final url = Uri.parse('mailto:$email');
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url);
+    if (email.isEmpty) return;
+    final uri = Uri.parse('mailto:$email');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return SignalBuilder(
       builder: (context) {
         final currentUser = authSignal.currentUser.value;
 
         if (currentUser == null || !currentUser.role.canSearchMembers) {
           return Scaffold(
-            appBar: AppBar(title: const Text('Pesquisa de Membros')),
+            appBar: AppBar(title: const Text('Acesso Restrito')),
             body: Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.lock_outline, size: 64, color: AppColors.error),
+                    Icon(Icons.lock_outline, size: 64, color: colorScheme.error),
                     const SizedBox(height: 16),
                     const Text(
-                      'Acesso Restrito',
+                      'Acesso Negado',
                       style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Seu perfil atual não possui permissão para pesquisar membros.',
+                    Text(
+                      'Seu perfil atual (${currentUser?.role.displayName ?? "Desconhecido"}) não possui permissão para consultar os membros.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.textSecondary),
+                      style: TextStyle(color: colorScheme.onSurfaceVariant),
                     ),
-                    const SizedBox(height: 24),
-                    ElevatedButton(
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
                       onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Voltar'),
+                      icon: const Icon(Icons.arrow_back),
+                      label: const Text('Voltar'),
                     ),
                   ],
                 ),
@@ -110,12 +120,11 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
         final itemsPerPage = memberSearchSignal.itemsPerPage.value;
 
         return Scaffold(
-          backgroundColor: const Color(0xFFF8FAFC),
           appBar: AppBar(
             title: const Text('Pesquisa e Gestão de Membros'),
-            backgroundColor: AppColors.surface,
             elevation: 1,
             actions: [
+              const ThemeSelectorButton(),
               IconButton(
                 tooltip: 'Recarregar membros',
                 icon: const Icon(Icons.refresh),
@@ -132,11 +141,11 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Header & Security Scoping Notice
-                    _buildRoleScopeBanner(currentUser),
+                    _buildRoleScopeBanner(colorScheme, currentUser),
                     const SizedBox(height: 20),
 
                     // Filters & Search Card
-                    _buildFiltersCard(currentUser),
+                    _buildFiltersCard(colorScheme, currentUser),
                     const SizedBox(height: 24),
 
                     // Error Banner
@@ -145,18 +154,18 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFEF2F2),
+                          color: colorScheme.errorContainer,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                          border: Border.all(color: colorScheme.error.withValues(alpha: 0.5)),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.error_outline, color: AppColors.error),
+                            Icon(Icons.error_outline, color: colorScheme.error),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
                                 errorMessage,
-                                style: const TextStyle(color: AppColors.error),
+                                style: TextStyle(color: colorScheme.onErrorContainer),
                               ),
                             ),
                             TextButton(
@@ -170,7 +179,7 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
                     ],
 
                     // Pagination Summary Bar
-                    _buildSummaryBar(totalCount, itemsPerPage),
+                    _buildSummaryBar(colorScheme, totalCount, itemsPerPage),
                     const SizedBox(height: 16),
 
                     // List / Cards
@@ -180,11 +189,11 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
                         child: Center(child: CircularProgressIndicator()),
                       )
                     else if (totalCount == 0)
-                      _buildEmptyState()
+                      _buildEmptyState(colorScheme)
                     else ...[
-                      _buildMembersGrid(paginatedList),
+                      _buildMembersGrid(colorScheme, paginatedList),
                       const SizedBox(height: 24),
-                      _buildPaginationControls(currentPage, totalPages),
+                      _buildPaginationControls(colorScheme, currentPage, totalPages),
                     ],
                   ],
                 ),
@@ -196,7 +205,7 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
     );
   }
 
-  Widget _buildRoleScopeBanner(UserEntity currentUser) {
+  Widget _buildRoleScopeBanner(ColorScheme colorScheme, UserEntity currentUser) {
     String scopeTitle;
     String scopeDesc;
     IconData icon;
@@ -208,25 +217,25 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
         icon = Icons.admin_panel_settings;
         break;
       case AppRole.secretariaGeralExterna:
-        scopeTitle = 'Secretaria Geral — Vida Externa';
-        scopeDesc = 'Sua visão está restrita a todos os membros pertencentes à Vida Externa.';
+        scopeTitle = 'Escopo Secretaria Geral (Vida Externa)';
+        scopeDesc = 'Acesso restrito exclusivamente aos membros que pertencem ao Tipo de Vida Externa.';
         icon = Icons.wb_sunny_outlined;
         break;
       case AppRole.secretariaGeralInterna:
-        scopeTitle = 'Secretaria Geral — Vida Interna';
-        scopeDesc = 'Sua visão está restrita a todos os membros pertencentes à Vida Interna.';
+        scopeTitle = 'Escopo Secretaria Geral (Vida Interna)';
+        scopeDesc = 'Acesso restrito exclusivamente aos membros que pertencem ao Tipo de Vida Interna.';
         icon = Icons.nightlight_round_outlined;
-        break;
-      case AppRole.formador:
-        scopeTitle = 'Formador Vocacional — Vida Interna';
-        scopeDesc = 'Sua visão está restrita a todos os membros e vocacionados da Vida Interna.';
-        icon = Icons.school_outlined;
         break;
       case AppRole.secretariaLocal:
         final loc = Localidades.porSigla(currentUser.localidade);
-        scopeTitle = 'Secretaria Local — ${loc?.nome ?? currentUser.localidade ?? "Local"}';
-        scopeDesc = 'Sua visão está restrita exclusivamente aos membros cadastrados na sua fraternidade.';
+        scopeTitle = 'Escopo Secretaria Local (${loc?.nome ?? currentUser.localidade ?? "Fraternidade Local"})';
+        scopeDesc = 'Acesso restrito exclusivamente aos membros cadastrados na sua fraternidade local.';
         icon = Icons.location_city;
+        break;
+      case AppRole.formador:
+        scopeTitle = 'Escopo Formador (Vida Interna)';
+        scopeDesc = 'Acesso restrito para acompanhamento de formandos da Vida Interna.';
+        icon = Icons.school_outlined;
         break;
       default:
         scopeTitle = currentUser.role.displayName;
@@ -237,16 +246,16 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.primarySoft.withValues(alpha: 0.35),
+        color: colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+        border: Border.all(color: colorScheme.outlineVariant),
       ),
       child: Row(
         children: [
           CircleAvatar(
-            backgroundColor: AppColors.primary,
+            backgroundColor: colorScheme.primary,
             radius: 20,
-            child: Icon(icon, color: Colors.white, size: 20),
+            child: Icon(icon, color: colorScheme.onPrimary, size: 20),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -255,16 +264,16 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
               children: [
                 Text(
                   scopeTitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.primaryDark,
+                    color: colorScheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   scopeDesc,
-                  style: const TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+                  style: TextStyle(fontSize: 12.5, color: colorScheme.onSurfaceVariant),
                 ),
               ],
             ),
@@ -274,7 +283,7 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
     );
   }
 
-  Widget _buildFiltersCard(UserEntity currentUser) {
+  Widget _buildFiltersCard(ColorScheme colorScheme, UserEntity currentUser) {
     final filterTipoVida = memberSearchSignal.filterTipoVida.value;
     final filterLocalidade = memberSearchSignal.filterLocalidade.value;
     final filterEtapa = memberSearchSignal.filterEtapa.value;
@@ -289,16 +298,9 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.borderLight),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        border: Border.all(color: colorScheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -308,7 +310,7 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
             controller: _searchController,
             decoration: InputDecoration(
               hintText: 'Pesquise por Nome, E-mail, CPF ou Telefone...',
-              prefixIcon: const Icon(Icons.search, color: AppColors.primary),
+              prefixIcon: Icon(Icons.search, color: colorScheme.primary),
               suffixIcon: _searchController.text.isNotEmpty
                   ? IconButton(
                       icon: const Icon(Icons.clear, size: 18),
@@ -318,7 +320,16 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
                       },
                     )
                   : null,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              filled: true,
+              fillColor: colorScheme.surfaceContainerLow,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: colorScheme.outlineVariant),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: colorScheme.outlineVariant),
+              ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             ),
             onChanged: (val) {
@@ -326,151 +337,201 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
               setState(() {});
             },
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
 
           // Filtros Avançados
-          Wrap(
-            spacing: 14,
-            runSpacing: 14,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              // 1. Tipo de Vida
-              SizedBox(
-                width: 190,
-                child: DropdownButtonFormField<TipoVida?>(
-                  initialValue: filterTipoVida,
-                  isDense: true,
-                  decoration: InputDecoration(
-                    labelText: 'Tipo de Vida',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                    enabled: !isTipoVidaLocked,
-                  ),
-                  items: [
-                    if (!isTipoVidaLocked)
-                      const DropdownMenuItem(value: null, child: Text('Todos os Tipos')),
-                    const DropdownMenuItem(value: TipoVida.externa, child: Text('Vida Externa')),
-                    const DropdownMenuItem(value: TipoVida.interna, child: Text('Vida Interna')),
-                  ],
-                  onChanged: isTipoVidaLocked
-                      ? null
-                      : (val) => memberSearchSignal.filterTipoVida.value = val,
-                ),
-              ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final double itemWidth;
+              if (constraints.maxWidth >= 960) {
+                itemWidth = (constraints.maxWidth - 48) / 4;
+              } else if (constraints.maxWidth >= 540) {
+                itemWidth = (constraints.maxWidth - 16) / 2;
+              } else {
+                itemWidth = constraints.maxWidth;
+              }
 
-              // 2. Localidade da Fraternidade
-              SizedBox(
-                width: 210,
-                child: DropdownButtonFormField<String?>(
-                  initialValue: filterLocalidade,
-                  isDense: true,
-                  decoration: InputDecoration(
-                    labelText: 'Fraternidade',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                    enabled: !isLocalidadeLocked,
+              return Wrap(
+                spacing: 16,
+                runSpacing: 14,
+                children: [
+                  // 1. Tipo de Vida
+                  SizedBox(
+                    width: itemWidth,
+                    child: DropdownButtonFormField<TipoVida?>(
+                      initialValue: filterTipoVida,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: 'Tipo de Vida',
+                        isDense: true,
+                        filled: true,
+                        fillColor: colorScheme.surfaceContainerLow,
+                        border: const OutlineInputBorder(),
+                        enabled: !isTipoVidaLocked,
+                      ),
+                      items: [
+                        const DropdownMenuItem<TipoVida?>(
+                          value: null,
+                          child: Text('Todos os Tipos', overflow: TextOverflow.ellipsis),
+                        ),
+                        ...TipoVida.values.map(
+                          (t) => DropdownMenuItem(
+                            value: t,
+                            child: Text(t.displayName, overflow: TextOverflow.ellipsis),
+                          ),
+                        ),
+                      ],
+                      onChanged: isTipoVidaLocked
+                          ? null
+                          : (val) => memberSearchSignal.filterTipoVida.value = val,
+                    ),
                   ),
-                  items: [
-                    if (!isLocalidadeLocked)
-                      const DropdownMenuItem(value: null, child: Text('Todas as Fraternidades')),
-                    ...Localidades.todas.map((loc) => DropdownMenuItem(
-                          value: loc.sigla,
-                          child: Text('${loc.nome} (${loc.sigla})'),
-                        )),
-                  ],
-                  onChanged: isLocalidadeLocked
-                      ? null
-                      : (val) => memberSearchSignal.filterLocalidade.value = val,
-                ),
-              ),
 
-              // 3. Etapa do Caminho
-              SizedBox(
-                width: 190,
-                child: DropdownButtonFormField<String?>(
-                  initialValue: filterEtapa,
-                  isDense: true,
-                  decoration: InputDecoration(
-                    labelText: 'Etapa do Caminho',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  // 2. Fraternidade Localidade
+                  SizedBox(
+                    width: itemWidth,
+                    child: DropdownButtonFormField<String?>(
+                      initialValue: filterLocalidade,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: 'Fraternidade',
+                        isDense: true,
+                        filled: true,
+                        fillColor: colorScheme.surfaceContainerLow,
+                        border: const OutlineInputBorder(),
+                        enabled: !isLocalidadeLocked,
+                      ),
+                      items: [
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text('Todas as Fraternidades', overflow: TextOverflow.ellipsis),
+                        ),
+                        ...Localidades.todas.map(
+                          (l) => DropdownMenuItem(
+                            value: l.sigla,
+                            child: Text('${l.nome} (${l.sigla})', overflow: TextOverflow.ellipsis),
+                          ),
+                        ),
+                      ],
+                      onChanged: isLocalidadeLocked
+                          ? null
+                          : (val) => memberSearchSignal.filterLocalidade.value = val,
+                    ),
                   ),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Todas as Etapas')),
-                    ..._etapasPossiveis.map((e) => DropdownMenuItem(value: e, child: Text(e))),
-                  ],
-                  onChanged: (val) => memberSearchSignal.filterEtapa.value = val,
-                ),
-              ),
 
-              // 4. Estado Civil (Casado vs Solteiro)
-              SizedBox(
-                width: 170,
-                child: DropdownButtonFormField<bool?>(
-                  initialValue: filterCasado,
-                  isDense: true,
-                  decoration: InputDecoration(
-                    labelText: 'Estado Civil',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  // 3. Etapa do Caminho
+                  SizedBox(
+                    width: itemWidth,
+                    child: DropdownButtonFormField<String?>(
+                      key: ValueKey('filter_etapa_${filterTipoVida?.key}'),
+                      initialValue: _etapasDisponiveis.contains(filterEtapa) ? filterEtapa : null,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: 'Etapa do Caminho',
+                        isDense: true,
+                        filled: true,
+                        fillColor: colorScheme.surfaceContainerLow,
+                        border: const OutlineInputBorder(),
+                      ),
+                      items: [
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text('Todas as Etapas', overflow: TextOverflow.ellipsis),
+                        ),
+                        ..._etapasDisponiveis.map(
+                          (e) => DropdownMenuItem(
+                            value: e,
+                            child: Text(e, overflow: TextOverflow.ellipsis),
+                          ),
+                        ),
+                      ],
+                      onChanged: (val) => memberSearchSignal.filterEtapa.value = val,
+                    ),
                   ),
-                  items: const [
-                    DropdownMenuItem(value: null, child: Text('Todos')),
-                    DropdownMenuItem(value: false, child: Text('Solteiro(a)')),
-                    DropdownMenuItem(value: true, child: Text('Casado(a)')),
-                  ],
-                  onChanged: (val) => memberSearchSignal.filterCasado.value = val,
-                ),
-              ),
 
-              // Botão Limpar Filtros
-              TextButton.icon(
-                onPressed: () {
-                  _searchController.clear();
-                  memberSearchSignal.clearFilters();
-                  setState(() {});
-                },
-                icon: const Icon(Icons.filter_alt_off, size: 18),
-                label: const Text('Limpar Filtros'),
-              ),
-            ],
+                  // 4. Estado Civil (Casado / Solteiro)
+                  SizedBox(
+                    width: itemWidth,
+                    child: DropdownButtonFormField<bool?>(
+                      initialValue: filterCasado,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: 'Estado Civil',
+                        isDense: true,
+                        filled: true,
+                        fillColor: colorScheme.surfaceContainerLow,
+                        border: const OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem<bool?>(
+                          value: null,
+                          child: Text('Todos', overflow: TextOverflow.ellipsis),
+                        ),
+                        DropdownMenuItem<bool?>(
+                          value: true,
+                          child: Text('Casados', overflow: TextOverflow.ellipsis),
+                        ),
+                        DropdownMenuItem<bool?>(
+                          value: false,
+                          child: Text('Solteiros', overflow: TextOverflow.ellipsis),
+                        ),
+                      ],
+                      onChanged: (val) => memberSearchSignal.filterCasado.value = val,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 14),
+
+          // Botão Limpar Filtros
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () {
+                _searchController.clear();
+                memberSearchSignal.clearFilters();
+                setState(() {});
+              },
+              icon: const Icon(Icons.filter_alt_off_outlined, size: 16),
+              label: const Text('Limpar Filtros'),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSummaryBar(int totalCount, int itemsPerPage) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildSummaryBar(ColorScheme colorScheme, int totalCount, int itemsPerPage) {
+    return Wrap(
+      alignment: WrapAlignment.spaceBetween,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 12,
+      runSpacing: 8,
       children: [
         Text(
-          '$totalCount ${totalCount == 1 ? "membro encontrado" : "membros encontrados"}',
-          style: const TextStyle(
+          'Total de membros encontrados: $totalCount',
+          style: TextStyle(
             fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface,
           ),
         ),
         Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Itens por página: ',
-              style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-            ),
-            const SizedBox(width: 8),
+            Text('Exibir: ', style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant)),
             DropdownButton<int>(
               value: itemsPerPage,
               underline: const SizedBox(),
               items: const [
-                DropdownMenuItem(value: 10, child: Text('10')),
-                DropdownMenuItem(value: 25, child: Text('25')),
-                DropdownMenuItem(value: 50, child: Text('50')),
+                DropdownMenuItem(value: 10, child: Text('10 por página')),
+                DropdownMenuItem(value: 25, child: Text('25 por página')),
+                DropdownMenuItem(value: 50, child: Text('50 por página')),
               ],
               onChanged: (val) {
-                if (val != null) {
-                  memberSearchSignal.itemsPerPage.value = val;
-                }
+                if (val != null) memberSearchSignal.itemsPerPage.value = val;
               },
             ),
           ],
@@ -479,59 +540,65 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
     );
   }
 
-  Widget _buildMembersGrid(List<UserEntity> members) {
+  Widget _buildMembersGrid(ColorScheme colorScheme, List<UserEntity> members) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Grid responsive calculation
-        final width = constraints.maxWidth;
-        int crossAxisCount = 1;
-        if (width >= 1000) {
-          crossAxisCount = 3;
-        } else if (width >= 650) {
-          crossAxisCount = 2;
-        }
-
-        if (crossAxisCount == 1) {
+        final isTwoCol = constraints.maxWidth > 750;
+        if (isTwoCol) {
+          final rowCount = (members.length / 2).ceil();
           return Column(
-            children: members.map((m) => _buildMemberCard(m)).toList(),
+            children: List.generate(rowCount, (rowIndex) {
+              final firstIndex = rowIndex * 2;
+              final secondIndex = firstIndex + 1;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _buildMemberCard(colorScheme, members[firstIndex], fillRemaining: true),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: secondIndex < members.length
+                            ? _buildMemberCard(colorScheme, members[secondIndex], fillRemaining: true)
+                            : const SizedBox.shrink(),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
           );
         }
 
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossAxisCount,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            mainAxisExtent: 260,
-          ),
-          itemCount: members.length,
-          itemBuilder: (context, index) => _buildMemberCard(members[index]),
+        return Column(
+          children: members
+              .map((member) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _buildMemberCard(colorScheme, member, fillRemaining: false),
+                  ))
+              .toList(),
         );
       },
     );
   }
 
-  Widget _buildMemberCard(UserEntity member) {
-    final localidadeObj = Localidades.porSigla(member.localidade);
-    final localidadeNome = localidadeObj?.nome ?? member.localidade ?? 'Não definida';
+  Widget _buildMemberCard(ColorScheme colorScheme, UserEntity member, {bool fillRemaining = false}) {
+    final localidadeObj = Localidades.resolver(member.localidade);
+    final localidadeNome = localidadeObj?.rotuloCompleto ??
+        ((member.localidade != null && member.localidade!.trim().isNotEmpty)
+            ? member.localidade!
+            : 'Não definida');
     final tipoVidaNome = member.tipoVida?.displayName ?? 'Não definido';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.borderLight),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: colorScheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -540,7 +607,7 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildAvatar(member),
+              _buildAvatar(colorScheme, member),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -548,10 +615,10 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
                   children: [
                     Text(
                       member.nome.isNotEmpty ? member.nome : 'Sem nome cadastrado',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
+                        color: colorScheme.onSurface,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -559,7 +626,7 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
                     const SizedBox(height: 2),
                     Text(
                       member.email,
-                      style: const TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+                      style: TextStyle(fontSize: 12.5, color: colorScheme.onSurfaceVariant),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -567,12 +634,12 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
                       const SizedBox(height: 2),
                       Row(
                         children: [
-                          const Icon(Icons.location_on_outlined, size: 13, color: AppColors.textSecondary),
+                          Icon(Icons.location_on_outlined, size: 13, color: colorScheme.onSurfaceVariant),
                           const SizedBox(width: 3),
                           Expanded(
                             child: Text(
                               '${member.cidade}/${member.uf ?? ""}',
-                              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                              style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -592,27 +659,31 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
             spacing: 6,
             runSpacing: 6,
             children: [
-              _buildBadgeChip(member.role.displayName, AppColors.primarySoft, AppColors.primaryDark),
-              _buildBadgeChip(tipoVidaNome, Colors.amber.shade50, Colors.amber.shade900),
-              _buildBadgeChip(localidadeNome, Colors.blue.shade50, Colors.blue.shade800),
+              _buildBadgeChip(member.role.displayName, colorScheme.primary, colorScheme.onPrimary),
+              _buildBadgeChip(tipoVidaNome, colorScheme.secondaryContainer, colorScheme.onSecondaryContainer),
+              _buildBadgeChip(localidadeNome, colorScheme.tertiaryContainer, colorScheme.onTertiaryContainer),
               if (member.etapaFraternidade != null && member.etapaFraternidade!.isNotEmpty)
-                _buildBadgeChip(member.etapaFraternidade!, Colors.grey.shade100, Colors.grey.shade800),
+                _buildBadgeChip(member.etapaFraternidade!, colorScheme.surfaceContainerHigh, colorScheme.onSurface),
               _buildBadgeChip(
                 member.isCasado ? 'Casado(a)' : 'Solteiro(a)',
-                Colors.purple.shade50,
-                Colors.purple.shade800,
+                colorScheme.surfaceContainerHigh,
+                colorScheme.onSurfaceVariant,
               ),
             ],
           ),
 
-          const Spacer(),
-          const Divider(height: 16, color: AppColors.borderLight),
+          if (fillRemaining) const Spacer() else const SizedBox(height: 14),
+          Divider(height: 16, color: colorScheme.outlineVariant),
 
           // Actions
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
             children: [
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   if (member.telefone.isNotEmpty || member.celular != null)
                     IconButton(
@@ -621,23 +692,40 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
                       onPressed: () => _abrirWhatsApp(member.telefone.isNotEmpty ? member.telefone : member.celular),
                     ),
                   IconButton(
-                    icon: const Icon(Icons.mail_outline, color: AppColors.primary, size: 20),
+                    icon: Icon(Icons.mail_outline, color: colorScheme.primary, size: 20),
                     tooltip: 'Enviar E-mail',
                     onPressed: () => _abrirEmail(member.email),
                   ),
                 ],
               ),
-              ElevatedButton.icon(
-                onPressed: () => MemberDetailDialog.show(context, member),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                ),
-                icon: const Icon(Icons.visibility_outlined, size: 16),
-                label: const Text('Detalhes'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => MemberDetailDialog.show(context, member),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                    ),
+                    icon: const Icon(Icons.visibility_outlined, size: 16),
+                    label: const Text('Detalhes'),
+                  ),
+                  if (authSignal.currentUser.value?.role.canEditMemberInstitutional ?? false)
+                    ElevatedButton.icon(
+                      onPressed: () => MemberEditPage.navigate(context, member),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: colorScheme.primary,
+                        foregroundColor: colorScheme.onPrimary,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                      ),
+                      icon: const Icon(Icons.edit_outlined, size: 16),
+                      label: const Text('Editar'),
+                    ),
+                ],
               ),
             ],
           ),
@@ -646,7 +734,7 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
     );
   }
 
-  Widget _buildAvatar(UserEntity member) {
+  Widget _buildAvatar(ColorScheme colorScheme, UserEntity member) {
     final foto = member.fotoUrl;
     if (foto != null && foto.isNotEmpty) {
       ImageProvider? imgProvider;
@@ -662,7 +750,7 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
         return CircleAvatar(
           radius: 24,
           backgroundImage: imgProvider,
-          backgroundColor: AppColors.primarySoft,
+          backgroundColor: colorScheme.surfaceContainerHighest,
         );
       }
     }
@@ -673,13 +761,13 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
 
     return CircleAvatar(
       radius: 24,
-      backgroundColor: AppColors.primarySoft,
+      backgroundColor: colorScheme.primary,
       child: Text(
         initials,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.bold,
-          color: AppColors.primary,
+          color: colorScheme.onPrimary,
         ),
       ),
     );
@@ -695,26 +783,28 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
       child: Text(
         label,
         style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: text),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(ColorScheme colorScheme) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 60),
         child: Column(
           children: [
-            const Icon(Icons.search_off, size: 64, color: AppColors.textSecondary),
+            Icon(Icons.search_off, size: 64, color: colorScheme.outline),
             const SizedBox(height: 16),
             const Text(
               'Nenhum membro encontrado',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Tente ajustar seus termos de pesquisa ou remover os filtros aplicados.',
-              style: TextStyle(color: AppColors.textSecondary),
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 20),
             OutlinedButton(
@@ -731,11 +821,14 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
     );
   }
 
-  Widget _buildPaginationControls(int currentPage, int totalPages) {
+  Widget _buildPaginationControls(ColorScheme colorScheme, int currentPage, int totalPages) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        runSpacing: 4,
         children: [
           IconButton(
             icon: const Icon(Icons.chevron_left),
@@ -743,12 +836,10 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
                 ? () => memberSearchSignal.goToPage(currentPage - 1)
                 : null,
           ),
-          const SizedBox(width: 12),
           Text(
             'Página $currentPage de $totalPages',
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
           ),
-          const SizedBox(width: 12),
           IconButton(
             icon: const Icon(Icons.chevron_right),
             onPressed: currentPage < totalPages

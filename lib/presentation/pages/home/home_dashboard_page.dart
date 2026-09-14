@@ -5,6 +5,8 @@ import '../../../core/constants/app_routes.dart';
 import '../../../core/constants/localidades.dart';
 import '../../signals/auth_signal.dart';
 
+import '../../widgets/theme_selector_widget.dart';
+
 class HomeDashboardPage extends StatelessWidget {
   const HomeDashboardPage({super.key});
 
@@ -16,10 +18,55 @@ class HomeDashboardPage extends StatelessWidget {
     return SignalBuilder(
       builder: (context) {
         final user = authSignal.currentUser.value;
+        final isLoading = authSignal.isLoading.value;
 
         if (user == null) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+          if (isLoading) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+
+          return Scaffold(
+            appBar: AppBar(
+              title: _buildAppBarTitle(colorScheme),
+              actions: [
+                const ThemeSelectorButton(),
+                IconButton(
+                  icon: const Icon(Icons.logout),
+                  tooltip: 'Sair',
+                  onPressed: () => authSignal.signOut(),
+                ),
+              ],
+            ),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.account_circle_outlined, size: 64, color: colorScheme.outline),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Sessão não identificada',
+                      style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Não foi possível carregar os dados do seu usuário.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 20),
+                    OutlinedButton.icon(
+                      onPressed: () => authSignal.signOut(),
+                      icon: const Icon(Icons.logout),
+                      label: const Text('Sair para o Login'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           );
         }
 
@@ -27,8 +74,9 @@ class HomeDashboardPage extends StatelessWidget {
 
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Secretaria Misericórdia Materna'),
+            title: _buildAppBarTitle(colorScheme),
             actions: [
+              const ThemeSelectorButton(),
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'Sair',
@@ -45,8 +93,63 @@ class HomeDashboardPage extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      // Card de Identidade da Fraternidade
+                      Card(
+                        elevation: 0,
+                        color: colorScheme.surfaceContainerHigh,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          side: BorderSide(color: colorScheme.outlineVariant),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                          child: Row(
+                            children: [
+                              Image.asset(
+                                'assets/img/logo_fraternidade.png',
+                                height: 50,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, error, stackTrace) => Icon(
+                                  Icons.church_rounded,
+                                  size: 40,
+                                  color: colorScheme.primary,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Fraternidade Misericórdia Materna',
+                                      style: theme.textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        color: colorScheme.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Secretaria Geral & Acompanhamento de Membros',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.photo_library_outlined),
+                                tooltip: 'Visualizar Banner da Fraternidade',
+                                onPressed: () => _showBannerDialog(context),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
                       // Banner de Alerta Não Bloqueante: Cadastro Incompleto
-                      if (!user.isProfileComplete || user.cadastroEtapa < 6) ...[
+                      if (!user.isProfileComplete) ...[
                         Card(
                           elevation: 0,
                           color: colorScheme.errorContainer.withValues(alpha: 0.3),
@@ -95,7 +198,7 @@ class HomeDashboardPage extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 12),
                                 FilledButton.tonal(
-                                  onPressed: () => context.push(AppRoutes.memberForm),
+                                  onPressed: () => context.go(AppRoutes.memberForm),
                                   child: const Text('Concluir'),
                                 ),
                               ],
@@ -169,27 +272,27 @@ class HomeDashboardPage extends StatelessWidget {
                                           user.fotoUrl!,
                                           fit: BoxFit.cover,
                                           errorBuilder: (context, error, stackTrace) => Container(
-                                            color: colorScheme.primaryContainer,
+                                            color: colorScheme.primary,
                                             alignment: Alignment.center,
                                             child: Text(
                                               user.nome.isNotEmpty ? user.nome[0].toUpperCase() : 'M',
                                               style: TextStyle(
                                                 fontSize: 28,
                                                 fontWeight: FontWeight.bold,
-                                                color: colorScheme.primary,
+                                                color: colorScheme.onPrimary,
                                               ),
                                             ),
                                           ),
                                         )
                                       : Container(
-                                          color: colorScheme.primaryContainer,
+                                          color: colorScheme.primary,
                                           alignment: Alignment.center,
                                           child: Text(
                                             user.nome.isNotEmpty ? user.nome[0].toUpperCase() : 'M',
                                             style: TextStyle(
                                               fontSize: 28,
                                               fontWeight: FontWeight.bold,
-                                              color: colorScheme.primary,
+                                              color: colorScheme.onPrimary,
                                             ),
                                           ),
                                         ),
@@ -256,7 +359,7 @@ class HomeDashboardPage extends StatelessWidget {
                               IconButton(
                                 icon: const Icon(Icons.edit_note_rounded, size: 28),
                                 tooltip: 'Minha Ficha Cadastral',
-                                onPressed: () => context.push(AppRoutes.memberForm),
+                                onPressed: () => context.go(AppRoutes.memberForm),
                               ),
                             ],
                           ),
@@ -275,7 +378,7 @@ class HomeDashboardPage extends StatelessWidget {
                         if (role.canSearchMembers) ...[
                           Card(
                             elevation: 0,
-                            color: colorScheme.secondaryContainer.withValues(alpha: 0.25),
+                            color: colorScheme.surfaceContainerLow,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
                               side: BorderSide(color: colorScheme.outlineVariant),
@@ -301,7 +404,7 @@ class HomeDashboardPage extends StatelessWidget {
                         if (role.canManageInvites) ...[
                           Card(
                             elevation: 0,
-                            color: colorScheme.primaryContainer.withValues(alpha: 0.25),
+                            color: colorScheme.surfaceContainerLow,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
                               side: BorderSide(color: colorScheme.outlineVariant),
@@ -350,7 +453,7 @@ class HomeDashboardPage extends StatelessWidget {
                               title: const Text('Editar Ficha Cadastral'),
                               subtitle: const Text('Atualize seu telefone e foto de perfil'),
                               trailing: const Icon(Icons.chevron_right),
-                              onTap: () => context.push(AppRoutes.memberForm),
+                              onTap: () => context.go(AppRoutes.memberForm),
                             ),
                             const Divider(height: 1),
                             ListTile(
@@ -435,6 +538,73 @@ class HomeDashboardPage extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildAppBarTitle(ColorScheme colorScheme) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Image.asset(
+          'assets/img/logo_fraternidade.png',
+          height: 32,
+          fit: BoxFit.contain,
+          errorBuilder: (_, error, stackTrace) => const Icon(Icons.church_rounded, size: 24),
+        ),
+        const SizedBox(width: 10),
+        const Flexible(
+          child: Text(
+            'Misericórdia Materna',
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showBannerDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: Stack(
+            alignment: Alignment.topRight,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 750),
+                  child: Image.asset(
+                    'assets/img/banner_vertical.jpg',
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, error, stackTrace) => Container(
+                      padding: const EdgeInsets.all(32),
+                      color: Colors.black87,
+                      child: const Text(
+                        'Banner da Fraternidade Misericórdia Materna',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: CircleAvatar(
+                  backgroundColor: Colors.black.withValues(alpha: 0.65),
+                  child: IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    tooltip: 'Fechar',
+                    onPressed: () => Navigator.of(ctx).pop(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

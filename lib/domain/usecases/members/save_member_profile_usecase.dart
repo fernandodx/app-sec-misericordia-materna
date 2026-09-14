@@ -1,3 +1,5 @@
+import 'package:fpdart/fpdart.dart';
+import '../../../core/errors/failures.dart';
 import '../../entities/user_entity.dart';
 import '../../repositories/invite_repository.dart';
 import '../../repositories/user_repository.dart';
@@ -8,16 +10,19 @@ class SaveMemberProfileUseCase {
 
   SaveMemberProfileUseCase(this._userRepository, this._inviteRepository);
 
-  Future<void> call({
+  Future<Either<Failure, Unit>> call({
     required UserEntity user,
     String? inviteCode,
-  }) async {
-    // Salva o perfil do membro
-    await _userRepository.saveUser(user);
-
-    // Se houve código de convite utilizado, marca o convite como aceito
-    if (inviteCode != null && inviteCode.trim().isNotEmpty) {
-      await _inviteRepository.acceptInvite(inviteCode.trim(), user.id);
-    }
+  }) {
+    return TaskEither<Failure, Unit>.tryCatch(
+      () async {
+        await _userRepository.saveUser(user);
+        if (inviteCode != null && inviteCode.trim().isNotEmpty) {
+          await _inviteRepository.acceptInvite(inviteCode.trim(), user.id);
+        }
+        return unit;
+      },
+      (error, _) => Failure.fromException(error),
+    ).run();
   }
 }

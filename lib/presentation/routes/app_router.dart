@@ -81,6 +81,7 @@ class AppRouter {
         // Se está na tela de login/registro mas já está logado
         if (isAuthRoute) {
           if (user.role.isVisitante) return AppRoutes.institucional;
+          if (!user.isProfileComplete) return AppRoutes.memberForm;
           return AppRoutes.dashboard;
         }
 
@@ -96,8 +97,24 @@ class AppRouter {
 }
 
 class _SignalsListenable extends ChangeNotifier {
+  String? _lastUserId;
+  bool? _lastIsVisitante;
+  bool? _lastIsProfileComplete;
+
   _SignalsListenable() {
-    authSignal.currentUser.subscribe((_) => notifyListeners());
-    authSignal.activeInvite.subscribe((_) => notifyListeners());
+    authSignal.currentUser.subscribe((user) {
+      final currentUserId = user?.id;
+      final currentIsVisitante = user?.role.isVisitante;
+      final currentIsProfileComplete = user?.isProfileComplete;
+
+      if (currentUserId != _lastUserId ||
+          currentIsVisitante != _lastIsVisitante ||
+          currentIsProfileComplete != _lastIsProfileComplete) {
+        _lastUserId = currentUserId;
+        _lastIsVisitante = currentIsVisitante;
+        _lastIsProfileComplete = currentIsProfileComplete;
+        notifyListeners();
+      }
+    });
   }
 }

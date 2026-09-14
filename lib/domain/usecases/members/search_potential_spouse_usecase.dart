@@ -1,3 +1,5 @@
+import 'package:fpdart/fpdart.dart';
+import '../../../core/errors/failures.dart';
 import '../../entities/user_entity.dart';
 import '../../repositories/user_repository.dart';
 
@@ -6,7 +8,10 @@ class SearchPotentialSpouseUseCase {
 
   SearchPotentialSpouseUseCase(this._userRepository);
 
-  Future<List<UserEntity>> call(String query, {String? excludeUserId}) {
-    return _userRepository.searchUsersByName(query, excludeUserId: excludeUserId);
+  Future<Either<Failure, List<UserEntity>>> call(String query, {String? excludeUserId}) {
+    return TaskEither<Failure, List<UserEntity>>.tryCatch(
+      () => _userRepository.searchUsersByName(query, excludeUserId: excludeUserId),
+      (error, _) => Failure.fromException(error),
+    ).run();
   }
 }

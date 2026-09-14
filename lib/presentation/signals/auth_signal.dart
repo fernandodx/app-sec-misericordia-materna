@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:signals_flutter/signals_flutter.dart';
 import '../../core/di/dependency_injection.dart';
+import '../../core/errors/failures.dart';
 import '../../domain/entities/invite_entity.dart';
 import '../../domain/entities/user_entity.dart';
 
@@ -20,7 +21,7 @@ class AuthSignal {
         errorMessage.value = null;
       },
       onError: (e) {
-        errorMessage.value = e.toString();
+        errorMessage.value = Failure.fromException(e).message;
       },
     );
   }
@@ -41,11 +42,20 @@ class AuthSignal {
     try {
       isLoading.value = true;
       errorMessage.value = null;
-      final user = await sl.signInEmailUseCase(email, password);
-      currentUser.value = user;
-      return true;
+      final result = await sl.signInEmailUseCase(email, password);
+      return result.fold(
+        (failure) {
+          errorMessage.value = failure.message;
+          return false;
+        },
+        (user) {
+          currentUser.value = user;
+          errorMessage.value = null;
+          return true;
+        },
+      );
     } catch (e) {
-      errorMessage.value = e.toString();
+      errorMessage.value = Failure.fromException(e).message;
       return false;
     } finally {
       isLoading.value = false;
@@ -56,11 +66,20 @@ class AuthSignal {
     try {
       isLoading.value = true;
       errorMessage.value = null;
-      final user = await sl.registerEmailUseCase(email, password, nome: nome);
-      currentUser.value = user;
-      return true;
+      final result = await sl.registerEmailUseCase(email, password, nome: nome);
+      return result.fold(
+        (failure) {
+          errorMessage.value = failure.message;
+          return false;
+        },
+        (user) {
+          currentUser.value = user;
+          errorMessage.value = null;
+          return true;
+        },
+      );
     } catch (e) {
-      errorMessage.value = e.toString();
+      errorMessage.value = Failure.fromException(e).message;
       return false;
     } finally {
       isLoading.value = false;
@@ -71,11 +90,20 @@ class AuthSignal {
     try {
       isLoading.value = true;
       errorMessage.value = null;
-      final user = await sl.signInGoogleUseCase();
-      currentUser.value = user;
-      return true;
+      final result = await sl.signInGoogleUseCase();
+      return result.fold(
+        (failure) {
+          errorMessage.value = failure.message;
+          return false;
+        },
+        (user) {
+          currentUser.value = user;
+          errorMessage.value = null;
+          return true;
+        },
+      );
     } catch (e) {
-      errorMessage.value = e.toString();
+      errorMessage.value = Failure.fromException(e).message;
       return false;
     } finally {
       isLoading.value = false;
@@ -86,7 +114,7 @@ class AuthSignal {
     try {
       await sl.authRepository.sendEmailVerification();
     } catch (e) {
-      errorMessage.value = e.toString();
+      errorMessage.value = Failure.fromException(e).message;
     }
   }
 
@@ -98,6 +126,7 @@ class AuthSignal {
       }
       return isVerified;
     } catch (e) {
+      errorMessage.value = Failure.fromException(e).message;
       return false;
     }
   }
@@ -105,11 +134,19 @@ class AuthSignal {
   Future<void> signOut() async {
     try {
       isLoading.value = true;
-      await sl.signOutUseCase();
-      currentUser.value = null;
-      activeInvite.value = null;
+      errorMessage.value = null;
+      final result = await sl.signOutUseCase();
+      result.fold(
+        (failure) {
+          errorMessage.value = failure.message;
+        },
+        (_) {
+          currentUser.value = null;
+          activeInvite.value = null;
+        },
+      );
     } catch (e) {
-      errorMessage.value = e.toString();
+      errorMessage.value = Failure.fromException(e).message;
     } finally {
       isLoading.value = false;
     }

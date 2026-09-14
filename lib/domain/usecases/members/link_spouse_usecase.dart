@@ -1,3 +1,5 @@
+import 'package:fpdart/fpdart.dart';
+import '../../../core/errors/failures.dart';
 import '../../repositories/user_repository.dart';
 
 class LinkSpouseUseCase {
@@ -5,7 +7,13 @@ class LinkSpouseUseCase {
 
   LinkSpouseUseCase(this._userRepository);
 
-  Future<void> call({required String userId, required String spouseId}) {
-    return _userRepository.linkSpouse(userId: userId, spouseId: spouseId);
+  Future<Either<Failure, Unit>> call({required String userId, required String spouseId}) {
+    return TaskEither<Failure, Unit>.tryCatch(
+      () async {
+        await _userRepository.linkSpouse(userId: userId, spouseId: spouseId);
+        return unit;
+      },
+      (error, _) => Failure.fromException(error),
+    ).run();
   }
 }

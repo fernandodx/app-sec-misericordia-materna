@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/config/env_config.dart';
 import '../../../core/di/dependency_injection.dart';
 import '../../signals/auth_signal.dart';
+import '../../widgets/theme_selector_widget.dart';
 
 class InstitutionalPage extends StatefulWidget {
   const InstitutionalPage({super.key});
@@ -76,6 +77,7 @@ class _InstitutionalPageState extends State<InstitutionalPage> {
       appBar: AppBar(
         title: const Text('Fraternidade Misericórdia Materna'),
         actions: [
+          const ThemeSelectorButton(),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Sair',
@@ -104,10 +106,15 @@ class _InstitutionalPageState extends State<InstitutionalPage> {
                       padding: const EdgeInsets.all(24),
                       child: Column(
                         children: [
-                          Icon(
-                            Icons.volunteer_activism_rounded,
-                            size: 64,
-                            color: colorScheme.primary,
+                          Image.asset(
+                            'assets/img/logo_fraternidade.png',
+                            height: 80,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, _, _) => Icon(
+                              Icons.volunteer_activism_rounded,
+                              size: 64,
+                              color: colorScheme.primary,
+                            ),
                           ),
                           const SizedBox(height: 12),
                           Text(
@@ -150,7 +157,7 @@ class _InstitutionalPageState extends State<InstitutionalPage> {
                   // Mensagem de Convite Pendente
                   Card(
                     elevation: 0,
-                    color: colorScheme.secondaryContainer.withValues(alpha: 0.35),
+                    color: colorScheme.surfaceContainerHigh,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                       side: BorderSide(color: colorScheme.outlineVariant),
@@ -161,13 +168,18 @@ class _InstitutionalPageState extends State<InstitutionalPage> {
                         children: [
                           Row(
                             children: [
-                              Icon(Icons.info_outline, color: colorScheme.secondary),
+                              CircleAvatar(
+                                backgroundColor: colorScheme.secondary,
+                                foregroundColor: colorScheme.onSecondary,
+                                radius: 18,
+                                child: const Icon(Icons.info_outline, size: 18),
+                              ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
                                   'Este aplicativo é destinado à gestão interna e acompanhamento de membros da Fraternidade. Para ter acesso à secretaria, você precisa receber um link de convite oficial.',
                                   style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: colorScheme.onSecondaryContainer,
+                                    color: colorScheme.onSurface,
                                   ),
                                 ),
                               ),

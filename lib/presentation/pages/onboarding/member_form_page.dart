@@ -13,6 +13,7 @@ import '../../../core/utils/formatters.dart';
 import '../../../domain/entities/user_entity.dart';
 import '../../signals/auth_signal.dart';
 import '../../signals/member_form_signal.dart';
+import '../../widgets/theme_selector_widget.dart';
 
 class MemberFormPage extends StatefulWidget {
   const MemberFormPage({super.key});
@@ -118,15 +119,17 @@ class _MemberFormPageState extends State<MemberFormPage> {
     _telResidencialController = TextEditingController(text: user?.telefoneResidencial ?? '');
     _celularController = TextEditingController(text: user?.celular ?? user?.telefone ?? '');
 
+    final initialTipoVida = user?.tipoVida ?? authSignal.activeInvite.value?.tipoVida ?? TipoVida.externa;
+    _tipoVida = initialTipoVida;
+    _localidade = user?.localidade ?? authSignal.activeInvite.value?.localidade ?? 'BSB';
+
+    final etapasValidas = CadastroConstants.etapasPorTipoVida(initialTipoVida);
     final initialEtapa = user?.etapaFraternidade;
-    if (initialEtapa != null && CadastroConstants.etapasFraternidade.contains(initialEtapa)) {
+    if (initialEtapa != null && etapasValidas.contains(initialEtapa)) {
       _etapaFraternidade = initialEtapa;
     } else {
-      _etapaFraternidade = CadastroConstants.etapasFraternidade.first;
+      _etapaFraternidade = etapasValidas.first;
     }
-
-    _tipoVida = user?.tipoVida ?? authSignal.activeInvite.value?.tipoVida ?? TipoVida.externa;
-    _localidade = user?.localidade ?? authSignal.activeInvite.value?.localidade ?? 'BSB';
 
     _paroquiaController = TextEditingController(text: user?.paroquia ?? '');
     _paroquiaEnderecoController = TextEditingController(text: user?.paroquiaEndereco ?? '');
@@ -193,9 +196,10 @@ class _MemberFormPageState extends State<MemberFormPage> {
     }
 
     // 3. Etapa da Fraternidade (Etapa 4)
+    final etapasValidas = CadastroConstants.etapasPorTipoVida(_tipoVida);
     if (spouse.etapaFraternidade != null &&
-        CadastroConstants.etapasFraternidade.contains(spouse.etapaFraternidade)) {
-      if (overwrite || _etapaFraternidade == CadastroConstants.etapasFraternidade.first) {
+        etapasValidas.contains(spouse.etapaFraternidade)) {
+      if (overwrite || _etapaFraternidade == etapasValidas.first) {
         setState(() => _etapaFraternidade = spouse.etapaFraternidade!);
       }
     }
@@ -802,9 +806,9 @@ class _MemberFormPageState extends State<MemberFormPage> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: colorScheme.primaryContainer.withValues(alpha: 0.35),
+                    color: colorScheme.surfaceContainerHigh,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: colorScheme.primary.withValues(alpha: 0.3)),
+                    border: Border.all(color: colorScheme.outlineVariant),
                   ),
                   child: Text(
                     'Para o desenvolvimento do trabalho da equipe de formação é necessário que conheçamos um pouco mais a sua história de vida, pois você demonstra querer seguir o caminho que leva a Cristo em nossa Comunidade. Assim peço que você redija uma autobiografia em forma de redação (texto corrido). A partir dela poderemos iniciar um processo que nos levará a um mútuo conhecimento e assim podermos ajudá-lo(a) no seu discernimento vocacional.\n\n'
@@ -969,8 +973,14 @@ class _MemberFormPageState extends State<MemberFormPage> {
 
         return Scaffold(
           appBar: AppBar(
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              tooltip: 'Voltar ao Painel',
+              onPressed: () => context.go(AppRoutes.dashboard),
+            ),
             title: const Text('Ficha de Membro'),
             actions: [
+              const ThemeSelectorButton(),
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'Sair',
@@ -1081,7 +1091,11 @@ class _MemberFormPageState extends State<MemberFormPage> {
                                   )
                                 : Icon(step == 6 ? Icons.check_circle : Icons.arrow_forward, size: 18),
                             label: Text(
-                              step == 6 ? 'Finalizar Cadastro' : 'Salvar e Avançar',
+                              step == 6
+                                  ? (authSignal.currentUser.value?.isProfileComplete == true
+                                      ? 'Salvar Alterações'
+                                      : 'Finalizar Cadastro')
+                                  : 'Salvar e Avançar',
                               style: const TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -1101,6 +1115,10 @@ class _MemberFormPageState extends State<MemberFormPage> {
   Widget _buildStepperHeader(BuildContext context, int currentStep) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final user = authSignal.currentUser.value;
+    final isComplete = user?.isProfileComplete ?? false;
+    final maxStepReached = isComplete ? 6 : (user?.cadastroEtapa ?? 1);
+
     final titles = [
       'Pessoal',
       memberFormSignal.isCasado.value ? 'Filhos' : 'Família',
@@ -1120,15 +1138,17 @@ class _MemberFormPageState extends State<MemberFormPage> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: List.generate(6, (index) {
           final stepNum = index + 1;
-          final isDone = stepNum < currentStep;
           final isCurrent = stepNum == currentStep;
+          final isDone = isComplete
+              ? !isCurrent
+              : (stepNum < currentStep || stepNum < maxStepReached);
+
+          final canNavigate = isComplete || stepNum <= maxStepReached || stepNum <= currentStep;
 
           return InkWell(
-            onTap: () {
-              if (stepNum <= currentStep) {
-                memberFormSignal.goToStep(stepNum);
-              }
-            },
+            onTap: canNavigate
+                ? () => memberFormSignal.goToStep(stepNum)
+                : null,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
@@ -1137,20 +1157,18 @@ class _MemberFormPageState extends State<MemberFormPage> {
                 children: [
                   CircleAvatar(
                     radius: 14,
-                    backgroundColor: isDone
+                    backgroundColor: isDone || isCurrent
                         ? colorScheme.primary
-                        : isCurrent
-                            ? colorScheme.primaryContainer
-                            : colorScheme.surfaceContainerHighest,
+                        : colorScheme.surfaceContainerHighest,
                     child: isDone
-                        ? const Icon(Icons.check, size: 16, color: Colors.white)
+                        ? Icon(Icons.check, size: 16, color: colorScheme.onPrimary)
                         : Text(
                             '$stepNum',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
                               color: isCurrent
-                                  ? colorScheme.primary
+                                  ? colorScheme.onPrimary
                                   : colorScheme.onSurfaceVariant,
                             ),
                           ),
@@ -1229,7 +1247,7 @@ class _MemberFormPageState extends State<MemberFormPage> {
                   child: Container(
                     width: 108,
                     height: 108,
-                    color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+                    color: colorScheme.surfaceContainerHighest,
                     child: selectedBytes != null
                         ? Image.memory(
                             selectedBytes,
@@ -1244,11 +1262,11 @@ class _MemberFormPageState extends State<MemberFormPage> {
                                 width: 108,
                                 height: 108,
                                 errorBuilder: (context, error, stackTrace) => Center(
-                                  child: Icon(Icons.person, size: 54, color: colorScheme.primary),
+                                  child: Icon(Icons.person, size: 54, color: colorScheme.onSurfaceVariant),
                                 ),
                               )
                             : Center(
-                                child: Icon(Icons.person, size: 54, color: colorScheme.primary),
+                                child: Icon(Icons.person, size: 54, color: colorScheme.onSurfaceVariant),
                               ),
                   ),
                 ),
@@ -1474,9 +1492,9 @@ class _MemberFormPageState extends State<MemberFormPage> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: colorScheme.primaryContainer.withValues(alpha: 0.4),
+                        color: colorScheme.surfaceContainerHigh,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: colorScheme.primary),
+                        border: Border.all(color: colorScheme.outlineVariant),
                       ),
                       child: Row(
                         children: [
@@ -2108,16 +2126,22 @@ class _MemberFormPageState extends State<MemberFormPage> {
                   ],
                   selected: {tipoVidaAtual},
                   onSelectionChanged: (set) {
-                    setState(() => _tipoVida = set.first);
+                    setState(() {
+                      _tipoVida = set.first;
+                      final novasEtapas = CadastroConstants.etapasPorTipoVida(_tipoVida);
+                      if (!novasEtapas.contains(_etapaFraternidade)) {
+                        _etapaFraternidade = novasEtapas.first;
+                      }
+                    });
                   },
                 ),
               ] else ...[
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    color: colorScheme.primaryContainer.withValues(alpha: 0.4),
+                    color: colorScheme.surfaceContainerHigh,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: colorScheme.primary.withValues(alpha: 0.3)),
+                    border: Border.all(color: colorScheme.outlineVariant),
                   ),
                   child: Row(
                     children: [
@@ -2222,38 +2246,38 @@ class _MemberFormPageState extends State<MemberFormPage> {
         ),
         const SizedBox(height: 12),
 
-        ...CadastroConstants.etapasFraternidade.map((etapa) {
-          final isSelected = _etapaFraternidade == etapa;
-          return Card(
-            elevation: isSelected ? 2 : 0,
-            color: isSelected
-                ? colorScheme.primaryContainer.withValues(alpha: 0.3)
-                : colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(
-                color: isSelected ? colorScheme.primary : colorScheme.outlineVariant,
+        Builder(
+          builder: (context) {
+            final etapas = CadastroConstants.etapasPorTipoVida(tipoVidaAtual);
+            final valorSelecionado = etapas.contains(_etapaFraternidade)
+                ? _etapaFraternidade
+                : etapas.first;
+
+            return DropdownButtonFormField<String>(
+              key: ValueKey('etapa_${tipoVidaAtual.key}_$valorSelecionado'),
+              initialValue: valorSelecionado,
+              isExpanded: true,
+              decoration: InputDecoration(
+                labelText: 'Etapa Formativa (${tipoVidaAtual.label}) *',
+                border: const OutlineInputBorder(),
+                filled: true,
+                fillColor: colorScheme.surfaceContainerLow,
+                prefixIcon: const Icon(Icons.school_outlined),
               ),
-            ),
-            margin: const EdgeInsets.only(bottom: 12),
-            // ignore: deprecated_member_use
-            child: RadioListTile<String>(
-              value: etapa,
-              // ignore: deprecated_member_use
-              groupValue: _etapaFraternidade,
-              title: Text(
-                etapa,
-                style: TextStyle(
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                ),
-              ),
-              // ignore: deprecated_member_use
+              items: etapas
+                  .map((e) => DropdownMenuItem(
+                        value: e,
+                        child: Text(e, overflow: TextOverflow.ellipsis),
+                      ))
+                  .toList(),
               onChanged: (val) {
-                if (val != null) setState(() => _etapaFraternidade = val);
+                if (val != null) {
+                  setState(() => _etapaFraternidade = val);
+                }
               },
-            ),
-          );
-        }),
+            );
+          },
+        ),
       ],
     );
   }
@@ -2457,9 +2481,9 @@ class _MemberFormPageState extends State<MemberFormPage> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: colorScheme.primaryContainer.withValues(alpha: 0.25),
+                color: colorScheme.surfaceContainerHigh,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: colorScheme.primary.withValues(alpha: 0.3)),
+                border: Border.all(color: colorScheme.outlineVariant),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

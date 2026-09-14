@@ -1,3 +1,5 @@
+import 'package:fpdart/fpdart.dart';
+import '../../../core/errors/failures.dart';
 import '../../repositories/user_repository.dart';
 
 class SaveMemberStepUseCase {
@@ -5,10 +7,16 @@ class SaveMemberStepUseCase {
 
   SaveMemberStepUseCase(this._userRepository);
 
-  Future<void> call({
+  Future<Either<Failure, Unit>> call({
     required String userId,
     required Map<String, dynamic> stepData,
   }) {
-    return _userRepository.saveUserPartial(userId, stepData);
+    return TaskEither<Failure, Unit>.tryCatch(
+      () async {
+        await _userRepository.saveUserPartial(userId, stepData);
+        return unit;
+      },
+      (error, _) => Failure.fromException(error),
+    ).run();
   }
 }

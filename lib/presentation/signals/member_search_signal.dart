@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:signals_flutter/signals_flutter.dart';
 import '../../core/constants/app_roles.dart';
 import '../../core/di/dependency_injection.dart';
+import '../../core/errors/failures.dart';
 import '../../domain/entities/user_entity.dart';
 import 'auth_signal.dart';
 
@@ -64,7 +65,7 @@ class MemberSearchSignal {
       final all = await sl.userRepository.getAllUsers();
       members.value = all;
     } catch (e) {
-      errorMessage.value = 'Erro ao carregar membros: $e';
+      errorMessage.value = Failure.fromException(e).message;
     } finally {
       isLoading.value = false;
     }
@@ -201,15 +202,29 @@ class MemberSearchSignal {
       return false;
     }
 
+    if (role != null && !current.role.podeAtribuirRole(role)) {
+      errorMessage.value = 'Seu perfil (${current.role.displayName}) não tem permissão para atribuir o papel ${role.displayName}.';
+      return false;
+    }
+
     try {
       isSaving.value = true;
       errorMessage.value = null;
 
       final data = <String, dynamic>{};
-      if (tipoVida != null) data['tipoVida'] = tipoVida.name;
-      if (localidade != null) data['localidade'] = localidade;
-      if (etapaFraternidade != null) data['etapaFraternidade'] = etapaFraternidade;
-      if (role != null) data['role'] = role.name;
+      if (tipoVida != null) {
+        data['tipoVida'] = tipoVida.key;
+        data['tipo_vida'] = tipoVida.key;
+      }
+      if (localidade != null) {
+        data['localidade'] = localidade;
+      }
+      if (etapaFraternidade != null) {
+        data['etapaFraternidade'] = etapaFraternidade;
+      }
+      if (role != null) {
+        data['role'] = role.key;
+      }
 
       await sl.userRepository.saveUserPartial(userId, data);
 
@@ -229,7 +244,57 @@ class MemberSearchSignal {
       members.value = updatedList;
       return true;
     } catch (e) {
-      errorMessage.value = 'Erro ao atualizar membro: $e';
+      errorMessage.value = Failure.fromException(e).message;
+      return false;
+    } finally {
+      isSaving.value = false;
+    }
+  }
+
+  /// Salva todas as alterações cadastrais de um membro no Firestore e atualiza o estado local
+  Future<bool> saveFullMember(UserEntity updatedMember) async {
+    final current = authSignal.currentUser.value;
+    if (current == null || !current.role.canEditMemberInstitutional) {
+      errorMessage.value = 'Sem permissão para alterar dados de membros.';
+      return false;
+    }
+
+    // Regras de alteração de papel
+    final existing = members.value.where((m) => m.id == updatedMember.id).firstOrNull;
+    if (existing != null && existing.role != updatedMember.role) {
+      if (existing.role == AppRole.fundador && !current.role.isFundador) {
+        errorMessage.value = 'Somente um Fundador pode alterar o papel de outro Fundador.';
+        return false;
+      }
+      if (!current.role.podeAtribuirRole(updatedMember.role)) {
+        errorMessage.value =
+            'Seu perfil (${current.role.displayName}) não tem permissão para atribuir o papel ${updatedMember.role.displayName}.';
+        return false;
+      }
+    }
+
+    try {
+      isSaving.value = true;
+      errorMessage.value = null;
+
+      final now = DateTime.now();
+      final toSave = updatedMember.copyWith(updatedAt: now);
+
+      await sl.userRepository.saveUser(toSave);
+
+      // Atualiza na lista local de membros
+      final list = List<UserEntity>.from(members.value);
+      final idx = list.indexWhere((m) => m.id == toSave.id);
+      if (idx != -1) {
+        list[idx] = toSave;
+      } else {
+        list.add(toSave);
+      }
+      members.value = list;
+
+      return true;
+    } catch (e) {
+      errorMessage.value = Failure.fromException(e).message;
       return false;
     } finally {
       isSaving.value = false;

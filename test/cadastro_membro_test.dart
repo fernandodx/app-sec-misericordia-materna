@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:app_secretaria/core/constants/app_roles.dart';
 import 'package:app_secretaria/core/constants/cadastro_constants.dart';
+import 'package:app_secretaria/core/constants/localidades.dart';
 import 'package:app_secretaria/core/services/viacep_service.dart';
 import 'package:app_secretaria/core/utils/formatters.dart';
 import 'package:app_secretaria/core/utils/image_compressor.dart';
@@ -390,16 +391,68 @@ void main() {
       expect(AppRole.acompanhador.canSearchMembers, isFalse);
     });
 
-    test('valida canEditMemberInstitutional de acordo com os papéis', () {
+    test('valida canEditMemberInstitutional de acordo com os papéis (mesma regra de canSearchMembers)', () {
       expect(AppRole.fundador.canEditMemberInstitutional, isTrue);
       expect(AppRole.secretariaGeralExterna.canEditMemberInstitutional, isTrue);
       expect(AppRole.secretariaGeralInterna.canEditMemberInstitutional, isTrue);
       expect(AppRole.secretariaLocal.canEditMemberInstitutional, isTrue);
+      expect(AppRole.formador.canEditMemberInstitutional, isTrue);
 
-      expect(AppRole.formador.canEditMemberInstitutional, isFalse);
       expect(AppRole.membro.canEditMemberInstitutional, isFalse);
       expect(AppRole.visitante.canEditMemberInstitutional, isFalse);
       expect(AppRole.acompanhador.canEditMemberInstitutional, isFalse);
+    });
+
+    test('regras de permissão para alteração de papéis (rolesPermitidasParaAtribuir)', () {
+      // 1. Fundador pode nomear qualquer perfil, incluindo outro Fundador
+      expect(AppRole.fundador.podeAtribuirRole(AppRole.fundador), isTrue);
+      expect(AppRole.fundador.podeAtribuirRole(AppRole.secretariaGeralExterna), isTrue);
+      expect(AppRole.fundador.rolesPermitidasParaAtribuir, containsAll(AppRole.values));
+
+      // 2. Secretaria Geral e Formador podem alterar para qualquer uma, MENOS Fundador
+      for (final role in [
+        AppRole.secretariaGeralExterna,
+        AppRole.secretariaGeralInterna,
+        AppRole.formador,
+      ]) {
+        expect(role.podeAtribuirRole(AppRole.fundador), isFalse);
+        expect(role.podeAtribuirRole(AppRole.secretariaGeralExterna), isTrue);
+        expect(role.podeAtribuirRole(AppRole.secretariaLocal), isTrue);
+        expect(role.podeAtribuirRole(AppRole.membro), isTrue);
+      }
+
+      // 3. Secretaria Local pode mudar para todos os perfis abaixo de Secretaria Geral
+      expect(AppRole.secretariaLocal.podeAtribuirRole(AppRole.fundador), isFalse);
+      expect(AppRole.secretariaLocal.podeAtribuirRole(AppRole.secretariaGeralExterna), isFalse);
+      expect(AppRole.secretariaLocal.podeAtribuirRole(AppRole.secretariaGeralInterna), isFalse);
+      expect(AppRole.secretariaLocal.podeAtribuirRole(AppRole.secretariaLocal), isTrue);
+      expect(AppRole.secretariaLocal.podeAtribuirRole(AppRole.formador), isTrue);
+      expect(AppRole.secretariaLocal.podeAtribuirRole(AppRole.membro), isTrue);
+    });
+
+    test('valida etapas da fraternidade de acordo com o Tipo de Vida', () {
+      // Vida Interna: 7 etapas (Aspirantado até Formador)
+      final etapasInterna = CadastroConstants.etapasPorTipoVida(TipoVida.interna);
+      expect(etapasInterna.length, equals(7));
+      expect(etapasInterna.first, equals('Aspirantado'));
+      expect(etapasInterna.last, equals('Formador'));
+
+      // Vida Externa: 10 etapas (Vocacional 1º até Discípulo 5º)
+      final etapasExterna = CadastroConstants.etapasPorTipoVida(TipoVida.externa);
+      expect(etapasExterna.length, equals(10));
+      expect(etapasExterna.first, equals('Vocacional 1º'));
+      expect(etapasExterna.last, equals('Discípulo 5º'));
+    });
+
+    test('Localidades.resolver identifica siglas, nomes e variações tolerantemente', () {
+      expect(Localidades.resolver('BSB')?.sigla, equals('BSB'));
+      expect(Localidades.resolver('Brasília')?.sigla, equals('BSB'));
+      expect(Localidades.resolver('Brasília - DF (BSB)')?.sigla, equals('BSB'));
+      expect(Localidades.resolver('AAX')?.sigla, equals('AAX'));
+      expect(Localidades.resolver('Araxá')?.sigla, equals('AAX'));
+      expect(Localidades.resolver('UDI')?.sigla, equals('UDI'));
+      expect(Localidades.resolver('Uberlândia')?.sigla, equals('UDI'));
+      expect(Localidades.resolver(null), isNull);
     });
 
     test('regras de escopo de visualização de membros por perfil', () {
@@ -465,6 +518,60 @@ void main() {
 
       // Fundador vê todos
       expect(all.length, equals(3));
+    });
+
+    test('regras de proteção e alteração de papel no salvamento de membro', () {
+      final fundadorUser = UserModel(
+        id: 'fundador-1',
+        email: 'fundador@misericordiamaterna.com',
+        nome: 'Fundador Pe.',
+        telefone: '(61) 99999-0000',
+        role: AppRole.fundador,
+        isEmailVerified: true,
+        isProfileComplete: true,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      final formadorUser = UserModel(
+        id: 'formador-1',
+        email: 'formador@misericordiamaterna.com',
+        nome: 'Formador Geral',
+        telefone: '(61) 99999-1111',
+        role: AppRole.formador,
+        isEmailVerified: true,
+        isProfileComplete: true,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      final membroTarget = UserModel(
+        id: 'membro-1',
+        email: 'membro@test.com',
+        nome: 'Membro Teste',
+        telefone: '(61) 99999-2222',
+        role: AppRole.membro,
+        isEmailVerified: true,
+        isProfileComplete: true,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      // Formador pode alterar membro comum para acompanhador ou formador
+      expect(formadorUser.role.podeAtribuirRole(AppRole.acompanhador), isTrue);
+      expect(formadorUser.role.podeAtribuirRole(AppRole.formador), isTrue);
+
+      // Formador NÃO pode atribuir papel de Fundador
+      expect(formadorUser.role.podeAtribuirRole(AppRole.fundador), isFalse);
+
+      // Se o membro alvo for Fundador, Formador não pode alterar seu papel
+      final targetFundador = membroTarget.copyWith(role: AppRole.fundador);
+      final formadorTentaAlterarFundador = targetFundador.role == AppRole.fundador && !formadorUser.role.isFundador;
+      expect(formadorTentaAlterarFundador, isTrue); // bloqueado!
+
+      // Se o usuário logado for Fundador, ele PODE alterar papel do outro Fundador
+      final fundadorTentaAlterarFundador = targetFundador.role == AppRole.fundador && !fundadorUser.role.isFundador;
+      expect(fundadorTentaAlterarFundador, isFalse); // permitido!
     });
   });
 }

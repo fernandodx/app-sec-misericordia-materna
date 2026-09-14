@@ -31,5 +31,29 @@ void main() {
       expect(expiredInvite.isExpired, isTrue);
       expect(expiredInvite.isValid, isFalse);
     });
+
+    test('preserva e permite validar o e-mail convidado (targetEmail)', () {
+      final inviteComEmail = InviteEntity(
+        id: 'INVITE_EMAIL',
+        targetRole: AppRole.membro,
+        targetEmail: 'irmao@fraternidade.org',
+        createdByUid: 'admin-123',
+        status: InviteStatus.pending,
+        createdAt: DateTime.now(),
+      );
+
+      expect(inviteComEmail.targetEmail, equals('irmao@fraternidade.org'));
+
+      final inviteSemEmail = InviteEntity(
+        id: 'INVITE_SEM_EMAIL',
+        targetRole: AppRole.membro,
+        createdByUid: 'admin-123',
+        status: InviteStatus.pending,
+        createdAt: DateTime.now(),
+      );
+
+      expect(inviteSemEmail.targetEmail, isNull);
+    });
   });
 }
+

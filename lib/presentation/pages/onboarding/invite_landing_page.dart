@@ -5,8 +5,10 @@ import 'package:signals_flutter/signals_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_routes.dart';
 import '../../../core/di/dependency_injection.dart';
+import '../../../core/errors/failures.dart';
 import '../../../domain/entities/invite_entity.dart';
 import '../../signals/auth_signal.dart';
+import '../../widgets/theme_selector_widget.dart';
 
 class InviteLandingPage extends StatefulWidget {
   final String? codigo;
@@ -19,6 +21,7 @@ class InviteLandingPage extends StatefulWidget {
 
 class _InviteLandingPageState extends State<InviteLandingPage> {
   bool _isLoading = true;
+  bool _isAccepting = false;
   InviteEntity? _invite;
   String? _errorMessage;
 
@@ -39,25 +42,33 @@ class _InviteLandingPageState extends State<InviteLandingPage> {
     }
 
     try {
-      final invite = await sl.validateInviteUseCase(code);
-      if (invite != null) {
-        authSignal.setActiveInvite(invite);
+      final result = await sl.validateInviteUseCase(code);
+      if (!mounted) return;
+      result.fold(
+        (failure) {
+          setState(() {
+            _errorMessage = failure.message;
+          });
+        },
+        (invite) {
+          authSignal.setActiveInvite(invite);
+          setState(() {
+            _invite = invite;
+          });
+        },
+      );
+    } catch (e) {
+      if (mounted) {
         setState(() {
-          _invite = invite;
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _isLoading = false;
-          _errorMessage =
-              'Convite não encontrado, já utilizado ou expirado. Verifique o link ou contate a secretaria.';
+          _errorMessage = Failure.fromException(e).message;
         });
       }
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = 'Erro ao validar convite: $e';
-      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -99,6 +110,44 @@ class _InviteLandingPageState extends State<InviteLandingPage> {
     context.push(AppRoutes.login);
   }
 
+  Future<void> _acceptAndBindInvite(InviteEntity invite, dynamic currentUser) async {
+    setState(() => _isAccepting = true);
+    try {
+      final updated = currentUser.copyWith(
+        role: invite.targetRole,
+        tipoVida: invite.tipoVida,
+        localidade: invite.localidade ?? currentUser.localidade,
+      );
+      await sl.userRepository.updateUser(updated);
+      try {
+        await sl.inviteRepository.acceptInvite(invite.id, currentUser.id);
+      } catch (_) {}
+      authSignal.refreshUser(updated);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Convite aceito! Perfil atualizado para ${invite.targetRole.label}.'),
+            backgroundColor: Colors.green.shade700,
+          ),
+        );
+        context.go(AppRoutes.memberForm);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao vincular convite: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isAccepting = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -113,6 +162,10 @@ class _InviteLandingPageState extends State<InviteLandingPage> {
             title: const Text('Convite Fraternidade'),
             centerTitle: true,
             automaticallyImplyLeading: false,
+            actions: const [
+              ThemeSelectorButton(),
+              SizedBox(width: 8),
+            ],
           ),
           body: SafeArea(
             child: Center(
@@ -134,16 +187,21 @@ class _InviteLandingPageState extends State<InviteLandingPage> {
                         children: [
                           // Emblema
                           Center(
-                            child: Container(
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                color: colorScheme.primaryContainer.withValues(alpha: 0.35),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                Icons.mail_outline_rounded,
-                                size: 56,
-                                color: colorScheme.primary,
+                            child: Image.asset(
+                              'assets/img/logo_fraternidade.png',
+                              height: 84,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) => Container(
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.mail_outline_rounded,
+                                  size: 48,
+                                  color: colorScheme.onPrimary,
+                                ),
                               ),
                             ),
                           ),
@@ -300,8 +358,16 @@ class _InviteLandingPageState extends State<InviteLandingPage> {
                               const SizedBox(height: 20),
                               if (currentUser.role.isVisitante || !currentUser.isProfileComplete)
                                 FilledButton(
-                                  onPressed: () => context.go(AppRoutes.memberForm),
-                                  child: const Text('Vincular ao Meu Perfil'),
+                                  onPressed: _isAccepting
+                                      ? null
+                                      : () => _acceptAndBindInvite(_invite!, currentUser),
+                                  child: _isAccepting
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                        )
+                                      : const Text('Aceitar Convite e Completar Ficha'),
                                 )
                               else
                                 FilledButton(

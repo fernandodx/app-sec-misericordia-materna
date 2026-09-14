@@ -5,6 +5,7 @@ import '../../../core/constants/app_routes.dart';
 import '../../../core/di/dependency_injection.dart';
 import '../../../core/utils/formatters.dart';
 import '../../signals/auth_signal.dart';
+import '../../widgets/theme_selector_widget.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -45,7 +46,7 @@ class _RegisterPageState extends State<RegisterPage> {
       final invite = authSignal.activeInvite.value;
       final current = authSignal.currentUser.value;
 
-      if (invite != null && current != null && current.role.isVisitante) {
+      if (invite != null && current != null) {
         final updated = current.copyWith(
           role: invite.targetRole,
           tipoVida: invite.tipoVida,
@@ -53,7 +54,9 @@ class _RegisterPageState extends State<RegisterPage> {
         );
         await sl.userRepository.updateUser(updated);
         authSignal.refreshUser(updated);
-        await sl.inviteRepository.acceptInvite(invite.id, current.id);
+        try {
+          await sl.inviteRepository.acceptInvite(invite.id, current.id);
+        } catch (_) {}
       }
 
       if (!mounted) return;
@@ -92,7 +95,7 @@ class _RegisterPageState extends State<RegisterPage> {
       final invite = authSignal.activeInvite.value;
       final current = authSignal.currentUser.value;
 
-      if (invite != null && current != null && current.role.isVisitante) {
+      if (invite != null && current != null) {
         final updated = current.copyWith(
           role: invite.targetRole,
           tipoVida: invite.tipoVida,
@@ -100,7 +103,9 @@ class _RegisterPageState extends State<RegisterPage> {
         );
         await sl.userRepository.updateUser(updated);
         authSignal.refreshUser(updated);
-        await sl.inviteRepository.acceptInvite(invite.id, current.id);
+        try {
+          await sl.inviteRepository.acceptInvite(invite.id, current.id);
+        } catch (_) {}
       }
 
       if (!mounted) return;
@@ -147,6 +152,10 @@ class _RegisterPageState extends State<RegisterPage> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.pop(),
         ),
+        actions: const [
+          ThemeSelectorButton(),
+          SizedBox(width: 8),
+        ],
       ),
       body: SafeArea(
         child: Center(
@@ -159,8 +168,18 @@ class _RegisterPageState extends State<RegisterPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Center(
+                      child: Image.asset(
+                        'assets/img/logo_fraternidade.png',
+                        height: 75,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     Text(
                       'Junte-se à Fraternidade',
+                      textAlign: TextAlign.center,
                       style: theme.textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: colorScheme.primary,
@@ -178,7 +197,7 @@ class _RegisterPageState extends State<RegisterPage> {
                     // Notificação de Convite Ativo
                     if (invite != null) ...[
                       Card(
-                        color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
+                        color: colorScheme.surfaceContainerHigh,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
@@ -188,7 +207,12 @@ class _RegisterPageState extends State<RegisterPage> {
                           padding: const EdgeInsets.all(16),
                           child: Row(
                             children: [
-                              Icon(Icons.mail_outline_rounded, color: colorScheme.secondary),
+                              CircleAvatar(
+                                backgroundColor: colorScheme.primary,
+                                foregroundColor: colorScheme.onPrimary,
+                                radius: 20,
+                                child: const Icon(Icons.mail_outline_rounded, size: 20),
+                              ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
@@ -198,13 +222,13 @@ class _RegisterPageState extends State<RegisterPage> {
                                       'Convite Vinculado!',
                                       style: theme.textTheme.titleSmall?.copyWith(
                                         fontWeight: FontWeight.bold,
-                                        color: colorScheme.onSecondaryContainer,
+                                        color: colorScheme.onSurface,
                                       ),
                                     ),
                                     Text(
                                       'Perfil: ${invite.targetRole.label}${invite.localidade != null ? " • ${invite.localidade}" : ""}',
                                       style: theme.textTheme.bodySmall?.copyWith(
-                                        color: colorScheme.onSecondaryContainer,
+                                        color: colorScheme.onSurfaceVariant,
                                       ),
                                     ),
                                   ],

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_roles.dart';
+import '../../core/constants/localidades.dart';
 import '../../domain/entities/user_entity.dart';
 
 class UserModel extends UserEntity {
@@ -146,24 +147,26 @@ class UserModel extends UserEntity {
     }
 
     AppRole parseRole(dynamic value) {
-      if (value is String) {
-        return AppRole.values.firstWhere(
-          (r) => r.key == value,
-          orElse: () => AppRole.visitante,
-        );
-      }
-      return AppRole.visitante;
+      if (value == null) return AppRole.visitante;
+      final str = value.toString().trim();
+      return AppRole.values.firstWhere(
+        (r) => r.key == str || r.name == str,
+        orElse: () => AppRole.visitante,
+      );
     }
 
     TipoVida? parseTipoVida(dynamic value) {
-      if (value is String) {
-        try {
-          return TipoVida.values.firstWhere((t) => t.key == value);
-        } catch (_) {
-          return null;
-        }
-      }
-      return null;
+      if (value == null) return null;
+      if (value is TipoVida) return value;
+      return TipoVida.fromKey(value.toString());
+    }
+
+    String? parseLocalidade(dynamic value) {
+      if (value == null) return null;
+      final str = value.toString().trim();
+      if (str.isEmpty) return null;
+      final resolved = Localidades.resolver(str);
+      return resolved?.sigla ?? str;
     }
 
     List<FilhoEntity> parsedFilhos = [];
@@ -189,8 +192,8 @@ class UserModel extends UserEntity {
       telefone: data['telefone'] as String? ?? '',
       fotoUrl: data['fotoUrl'] as String?,
       role: parseRole(data['role']),
-      tipoVida: parseTipoVida(data['tipoVida']),
-      localidade: data['localidade'] as String?,
+      tipoVida: parseTipoVida(data['tipoVida'] ?? data['tipo_vida']),
+      localidade: parseLocalidade(data['localidade'] ?? data['fraternidade'] ?? data['localidadeFraternidade']),
       supervisorId: data['supervisorId'] as String?,
       spouseId: data['spouseId'] as String?,
       isEmailVerified: (data['isEmailVerified'] as bool?) ?? false,

@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 import '../../core/di/dependency_injection.dart';
 import '../../core/services/viacep_service.dart';
+import '../../core/errors/failures.dart';
 import '../../domain/entities/invite_entity.dart';
 import '../../domain/entities/user_entity.dart';
 import 'auth_signal.dart';
@@ -111,12 +112,21 @@ class MemberFormSignal {
 
     try {
       isSearchingSpouse.value = true;
-      final results = await sl.searchPotentialSpouseUseCase(
+      final result = await sl.searchPotentialSpouseUseCase(
         clean,
         excludeUserId: current?.id,
       );
-      potentialSpouses.value = results;
-    } catch (_) {
+      result.fold(
+        (failure) {
+          errorMessage.value = failure.message;
+          potentialSpouses.value = [];
+        },
+        (results) {
+          potentialSpouses.value = results;
+        },
+      );
+    } catch (e) {
+      errorMessage.value = Failure.fromException(e).message;
       potentialSpouses.value = [];
     } finally {
       isSearchingSpouse.value = false;
@@ -146,36 +156,44 @@ class MemberFormSignal {
     try {
       isLinkingSpouse.value = true;
       errorMessage.value = null;
-      await sl.linkSpouseUseCase(userId: current.id, spouseId: spouse.id);
-      linkedSpouse.value = spouse;
-      isCasado.value = true;
-      potentialSpouses.value = [];
+      final result = await sl.linkSpouseUseCase(userId: current.id, spouseId: spouse.id);
+      return result.fold(
+        (failure) {
+          errorMessage.value = failure.message;
+          return false;
+        },
+        (_) {
+          linkedSpouse.value = spouse;
+          isCasado.value = true;
+          potentialSpouses.value = [];
 
-      // Herança inteligente: se o cônjuge já tiver preenchido filhos, endereço ou paróquia, herda
-      if (spouse.possuiFilhos && filhos.value.isEmpty) {
-        possuiFilhos.value = true;
-        filhos.value = List<FilhoEntity>.from(spouse.filhos);
-        nomesFilhos.value = List<String>.from(spouse.nomesFilhos);
-      }
+          // Herança inteligente: se o cônjuge já tiver preenchido filhos, endereço ou paróquia, herda
+          if (spouse.possuiFilhos && filhos.value.isEmpty) {
+            possuiFilhos.value = true;
+            filhos.value = List<FilhoEntity>.from(spouse.filhos);
+            nomesFilhos.value = List<String>.from(spouse.nomesFilhos);
+          }
 
-      participaPastoral.value = spouse.participaPastoral;
-      disponivelIniciarProcesso.value = spouse.disponivelIniciarProcesso;
+          participaPastoral.value = spouse.participaPastoral;
+          disponivelIniciarProcesso.value = spouse.disponivelIniciarProcesso;
 
-      if (spouse.cep != null && spouse.cep!.isNotEmpty) {
-        cepAddress.value = ViaCepResult(
-          cep: spouse.cep ?? '',
-          logradouro: spouse.logradouro ?? '',
-          complemento: spouse.complemento ?? '',
-          bairro: spouse.bairro ?? '',
-          cidade: spouse.cidade ?? '',
-          uf: spouse.uf ?? '',
-        );
-      }
+          if (spouse.cep != null && spouse.cep!.isNotEmpty) {
+            cepAddress.value = ViaCepResult(
+              cep: spouse.cep ?? '',
+              logradouro: spouse.logradouro ?? '',
+              complemento: spouse.complemento ?? '',
+              bairro: spouse.bairro ?? '',
+              cidade: spouse.cidade ?? '',
+              uf: spouse.uf ?? '',
+            );
+          }
 
-      successMessage.value = 'Vínculo com ${spouse.nome} realizado com sucesso!';
-      return true;
+          successMessage.value = 'Vínculo com ${spouse.nome} realizado com sucesso!';
+          return true;
+        },
+      );
     } catch (e) {
-      errorMessage.value = 'Erro ao vincular cônjuge: $e';
+      errorMessage.value = Failure.fromException(e).message;
       return false;
     } finally {
       isLinkingSpouse.value = false;
@@ -282,17 +300,20 @@ class MemberFormSignal {
 
       String? finalPhotoUrl = photoUrl.value;
       if (selectedPhotoBytes.value != null) {
-        try {
-          finalPhotoUrl = await sl.uploadMemberPhotoUseCase(
-            userId: current.id,
-            rawImageBytes: selectedPhotoBytes.value!,
-          );
-          photoUrl.value = finalPhotoUrl;
-          selectedPhotoBytes.value = null;
-        } catch (imgErr) {
-          // ignore: avoid_print
-          print('Erro ao processar e comprimir imagem: $imgErr');
-        }
+        final photoResult = await sl.uploadMemberPhotoUseCase(
+          userId: current.id,
+          rawImageBytes: selectedPhotoBytes.value!,
+        );
+        photoResult.fold(
+          (failure) {
+            errorMessage.value = 'Aviso: falha na foto (${failure.message}), prosseguindo com o cadastro.';
+          },
+          (url) {
+            finalPhotoUrl = url;
+            photoUrl.value = url;
+            selectedPhotoBytes.value = null;
+          },
+        );
       }
 
       final payload = Map<String, dynamic>.from(stepData);
@@ -312,33 +333,43 @@ class MemberFormSignal {
         }
       }
 
-      await sl.saveMemberStepUseCase(
+      final saveResult = await sl.saveMemberStepUseCase(
         userId: current.id,
         stepData: payload,
       );
 
-      if (isFinal && invite != null) {
-        await sl.inviteRepository.acceptInvite(invite.id, current.id);
-      }
+      return await saveResult.fold(
+        (failure) async {
+          errorMessage.value = failure.message;
+          return false;
+        },
+        (_) async {
+          if (isFinal && invite != null) {
+            try {
+              await sl.inviteRepository.acceptInvite(invite.id, current.id);
+            } catch (_) {}
+          }
 
-      // Atualiza usuário no estado local
-      final updated = current.copyWith(
-        fotoUrl: finalPhotoUrl ?? current.fotoUrl,
-        isProfileComplete: isFinal ? true : current.isProfileComplete,
-        cadastroEtapa: nextStep,
-        role: (isFinal && invite != null) ? invite.targetRole : current.role,
-        tipoVida: (isFinal && invite?.tipoVida != null) ? invite!.tipoVida : current.tipoVida,
-        localidade: (isFinal && invite?.localidade != null) ? invite!.localidade : current.localidade,
+          // Atualiza usuário no estado local
+          final updated = current.copyWith(
+            fotoUrl: finalPhotoUrl ?? current.fotoUrl,
+            isProfileComplete: isFinal ? true : current.isProfileComplete,
+            cadastroEtapa: nextStep,
+            role: (isFinal && invite != null) ? invite.targetRole : current.role,
+            tipoVida: (isFinal && invite?.tipoVida != null) ? invite!.tipoVida : current.tipoVida,
+            localidade: (isFinal && invite?.localidade != null) ? invite!.localidade : current.localidade,
+          );
+          authSignal.refreshUser(updated);
+
+          if (!isFinal) {
+            currentStep.value = nextStep;
+          }
+
+          return true;
+        },
       );
-      authSignal.refreshUser(updated);
-
-      if (!isFinal) {
-        currentStep.value = nextStep;
-      }
-
-      return true;
     } catch (e) {
-      errorMessage.value = 'Erro ao salvar etapa: $e';
+      errorMessage.value = Failure.fromException(e).message;
       return false;
     } finally {
       isSavingStep.value = false;

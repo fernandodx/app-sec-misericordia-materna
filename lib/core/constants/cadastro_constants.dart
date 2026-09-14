@@ -1,3 +1,5 @@
+import 'app_roles.dart';
+
 class CadastroConstants {
   static const List<String> estadosBrasil = [
     'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
@@ -15,7 +17,8 @@ class CadastroConstants {
     'Doutorado',
   ];
 
-  static const List<String> etapasFraternidade = [
+  // Etapas da Fraternidade para Vida Externa
+  static const List<String> etapasVidaExterna = [
     'Vocacional 1º',
     'Vocacional 2º',
     'Servo 1º',
@@ -27,4 +30,27 @@ class CadastroConstants {
     'Discípulo 4º',
     'Discípulo 5º',
   ];
+
+  // Alias para manter compatibilidade com usos existentes
+  static const List<String> etapasFraternidade = etapasVidaExterna;
+
+  // Etapas da Fraternidade para Vida Interna
+  static const List<String> etapasVidaInterna = [
+    'Aspirantado',
+    'Postulantado I',
+    'Postulantado II',
+    'Noviciado I',
+    'Noviciado II',
+    'Consagrado',
+    'Formador',
+  ];
+
+  /// Retorna as etapas correspondentes de acordo com o Tipo de Vida
+  static List<String> etapasPorTipoVida(TipoVida? tipoVida) {
+    if (tipoVida == TipoVida.interna) {
+      return etapasVidaInterna;
+    }
+    return etapasVidaExterna;
+  }
 }
+

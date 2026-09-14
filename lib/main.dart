@@ -4,8 +4,10 @@ import 'core/config/env_config.dart';
 import 'core/di/dependency_injection.dart';
 import 'core/utils/url_strategy/url_strategy.dart';
 import 'firebase_options.dart';
+import 'package:signals_flutter/signals_flutter.dart';
 import 'presentation/routes/app_router.dart';
 import 'presentation/signals/auth_signal.dart';
+import 'presentation/signals/theme_signal.dart';
 import 'theme.dart';
 import 'util.dart';
 
@@ -28,7 +30,10 @@ Future<void> main() async {
   // 3. Inicializar Injeção de Dependências (SOLID)
   sl.setup();
 
-  // 4. Inicializar Ouvinte de Autenticação (Signals)
+  // 4. Inicializar Tema Persistido (Signals)
+  await themeSignal.init();
+
+  // 5. Inicializar Ouvinte de Autenticação (Signals)
   authSignal.init();
 
   runApp(const MisericordiaMaternaApp());
@@ -43,13 +48,19 @@ class MisericordiaMaternaApp extends StatelessWidget {
     final textTheme = createAppTextTheme(context);
     final materialTheme = MaterialTheme(textTheme);
 
-    return MaterialApp.router(
-      title: 'Secretaria Misericórdia Materna',
-      debugShowCheckedModeBanner: false,
-      themeMode: ThemeMode.system,
-      theme: materialTheme.light(),
-      darkTheme: materialTheme.dark(),
-      routerConfig: AppRouter.createRouter(),
+    return SignalBuilder(
+      builder: (context) {
+        final currentThemeMode = themeSignal.themeMode.value;
+
+        return MaterialApp.router(
+          title: 'Secretaria Misericórdia Materna',
+          debugShowCheckedModeBanner: false,
+          themeMode: currentThemeMode,
+          theme: materialTheme.light(),
+          darkTheme: materialTheme.dark(),
+          routerConfig: AppRouter.createRouter(),
+        );
+      },
     );
   }
 }

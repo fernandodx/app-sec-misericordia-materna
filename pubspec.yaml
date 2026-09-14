@@ -64,6 +64,8 @@ dependencies:
   url_launcher: ^6.3.2
   http: ^1.2.2
   file_picker: ^12.2.0
+  fpdart: ^1.2.0
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:
@@ -76,6 +78,7 @@ flutter:
 
   assets:
     - .env
+    - assets/img/
 
 
   # An image asset can refer to one or more resolution-specific "variants", see
