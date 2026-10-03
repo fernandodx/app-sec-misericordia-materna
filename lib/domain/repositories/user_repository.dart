@@ -16,4 +16,6 @@ abstract class UserRepository {
   Future<List<UserEntity>> searchUsersByName(String query, {String? excludeUserId});
   Future<List<UserEntity>> getAllUsers();
   Future<void> linkSpouse({required String userId, required String spouseId});
+  Future<UserEntity> createDirectMember(UserEntity user);
+  Future<void> deleteUser(String userId);
 }

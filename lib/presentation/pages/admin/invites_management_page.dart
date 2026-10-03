@@ -67,8 +67,7 @@ class _InvitesManagementPageState extends State<InvitesManagementPage> {
                       AppRole.acompanhador,
                       AppRole.formador,
                       AppRole.secretariaLocal,
-                      AppRole.secretariaGeralExterna,
-                      AppRole.secretariaGeralInterna,
+                      AppRole.secretariaGeral,
                       AppRole.fundador,
                     ].map((role) {
                       return DropdownMenuItem(
@@ -80,10 +79,10 @@ class _InvitesManagementPageState extends State<InvitesManagementPage> {
                       if (val != null) {
                         setDialogState(() {
                           selectedRole = val;
-                          if (val == AppRole.formador || val == AppRole.secretariaGeralInterna) {
+                          if (val == AppRole.formador) {
                             selectedTipoVida = TipoVida.interna;
                             selectedLocalidade = null;
-                          } else if (val == AppRole.acompanhador || val == AppRole.secretariaLocal || val == AppRole.secretariaGeralExterna) {
+                          } else if (val == AppRole.acompanhador || val == AppRole.secretariaLocal) {
                             selectedTipoVida = TipoVida.externa;
                             selectedLocalidade ??= 'BSB';
                           }

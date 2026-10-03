@@ -1,22 +1,57 @@
 enum AppRole {
-  fundador('fundador', 'Fundador (Poder Total)'),
-  formador('formador', 'Formador (Vida Interna)'),
-  acompanhador('acompanhador', 'Acompanhador (Vida Externa)'),
-  secretariaGeralExterna('secretaria_geral_ext', 'Secretaria Geral (Vida Externa)'),
-  secretariaGeralInterna('secretaria_geral_int', 'Secretaria Geral (Vida Interna)'),
-  secretariaLocal('secretaria_local', 'Secretaria Local'),
-  membro('membro', 'Membro'),
-  visitante('visitante', 'Visitante (Sem Convite)');
+  fundador(
+    'fundador',
+    'Fundador (Poder Total)',
+    'Acesso total e irrestrito a todas as funcionalidades do sistema. Pode gerenciar todos os perfis (incluindo atribuir o papel de Fundador), desativar ou excluir membros definitivamente, gerenciar convites, consultar relatórios e administrar configurações globais da instituição.',
+  ),
+  formador(
+    'formador',
+    'Formador (Vida Interna)',
+    'Acompanhamento e discernimento vocacional dos membros de Vida Interna. Acesso à consulta dos membros de Vida Interna, relatórios formativos e acompanhamento de etapas da instituição.',
+  ),
+  acompanhador(
+    'acompanhador',
+    'Acompanhador (Vida Externa)',
+    'Acompanhamento formativo e pastoral dos membros de Vida Externa. Auxilia no discernimento vocacional e acompanhamento das etapas do caminho.',
+  ),
+  secretariaGeral(
+    'secretaria_geral',
+    'Secretaria Geral',
+    'Gestão ampla e unificada de membros e convites para todas as localidades e tipos de vida. Pode atribuir perfis a qualquer usuário (exceto Fundador), desativar e excluir membros, consultar fichas completas e gerenciar etapas.',
+  ),
+  secretariaLocal(
+    'secretaria_local',
+    'Secretaria Local',
+    'Gestão restrita de membros e convites da sua respectiva localidade/cidade. Pode cadastrar novos membros locais, consultar cadastros e atribuir perfis operacionais locais.',
+  ),
+  membro(
+    'membro',
+    'Membro',
+    'Membro ativo da Fraternidade. Acesso à própria ficha cadastral, informações institucionais, avisos, eventos e vida da instituição.',
+  ),
+  visitante(
+    'visitante',
+    'Visitante (Sem Convite)',
+    'Perfil inicial de acesso público. Visualiza apenas as informações institucionais públicas da Fraternidade enquanto aguarda aprovação de convite ou vínculo cadastral.',
+  );
 
   final String key;
   final String label;
+  final String description;
 
-  const AppRole(this.key, this.label);
+  const AppRole(this.key, this.label, this.description);
 
   static AppRole fromKey(String? key) {
     if (key == null) return AppRole.visitante;
+    final clean = key.trim().toLowerCase();
+    // Mapeamento retrocompatível para Secretaria Geral
+    if (clean == 'secretaria_geral' ||
+        clean == 'secretaria_geral_ext' ||
+        clean == 'secretaria_geral_int') {
+      return AppRole.secretariaGeral;
+    }
     return AppRole.values.firstWhere(
-      (role) => role.key == key,
+      (role) => role.key == clean,
       orElse: () => AppRole.visitante,
     );
   }
@@ -26,27 +61,43 @@ enum AppRole {
   bool get isFundador => this == AppRole.fundador;
   bool get isFormador => this == AppRole.formador;
   bool get isAcompanhador => this == AppRole.acompanhador;
-  bool get isSecretariaGeralExterna => this == AppRole.secretariaGeralExterna;
-  bool get isSecretariaGeralInterna => this == AppRole.secretariaGeralInterna;
+  bool get isSecretariaGeral => this == AppRole.secretariaGeral;
+  // Aliases de retrocompatibilidade
+  bool get isSecretariaGeralExterna => isSecretariaGeral;
+  bool get isSecretariaGeralInterna => isSecretariaGeral;
   bool get isSecretariaLocal => this == AppRole.secretariaLocal;
   bool get isMembro => this == AppRole.membro;
   bool get isVisitante => this == AppRole.visitante;
 
   bool get canManageInvites =>
       isFundador ||
-      isSecretariaGeralExterna ||
-      isSecretariaGeralInterna ||
+      isSecretariaGeral ||
       isSecretariaLocal;
 
   bool get canSearchMembers =>
       isFundador ||
-      isSecretariaGeralExterna ||
-      isSecretariaGeralInterna ||
+      isSecretariaGeral ||
       isSecretariaLocal ||
       isFormador;
 
+  /// Perfis que podem criar novos usuários/membros diretamente (sem convite)
+  bool get canCreateDirectMember =>
+      isFundador ||
+      isSecretariaGeral ||
+      isSecretariaLocal;
+
   /// Os mesmos perfis que podem consultar membros também podem alterar dados institucionais
   bool get canEditMemberInstitutional => canSearchMembers;
+
+  /// Perfis que podem desativar ou excluir membros definitivamente (Fundador e Secretaria Geral)
+  bool get canDeactivateOrDeleteMember =>
+      isFundador ||
+      isSecretariaGeral;
+
+  /// Perfis que podem gerenciar/atribuir múltiplos perfis aos membros
+  bool get canManageProfiles =>
+      isFundador ||
+      isSecretariaGeral;
 
   bool get canAccessDashboard => !isVisitante;
 
@@ -57,8 +108,7 @@ enum AppRole {
         // Somente o Fundador pode nomear outro Fundador (e qualquer outro perfil)
         return AppRole.values.toList();
 
-      case AppRole.secretariaGeralExterna:
-      case AppRole.secretariaGeralInterna:
+      case AppRole.secretariaGeral:
       case AppRole.formador:
         // Secretaria Geral e Formador podem alterar para qualquer um, menos Fundador
         return AppRole.values.where((r) => r != AppRole.fundador).toList();
@@ -68,8 +118,7 @@ enum AppRole {
         return AppRole.values
             .where((r) =>
                 r != AppRole.fundador &&
-                r != AppRole.secretariaGeralExterna &&
-                r != AppRole.secretariaGeralInterna)
+                r != AppRole.secretariaGeral)
             .toList();
 
       default:

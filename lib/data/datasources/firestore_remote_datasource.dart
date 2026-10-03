@@ -182,15 +182,53 @@ class FirestoreRemoteDataSource {
       }
 
       final normalizedEmail = email.trim().toLowerCase();
+
+      // 1. Verifica se o usuário já foi pré-cadastrado pela Secretaria diretamente pelo e-mail
+      final existingByEmail = await getUserByEmail(normalizedEmail);
+      if (existingByEmail != null) {
+        final oldId = existingByEmail.id;
+        final updatedData = existingByEmail.copyWith(
+          id: uid,
+          email: normalizedEmail,
+          isEmailVerified: isEmailVerified || existingByEmail.isEmailVerified,
+          fotoUrl: (existingByEmail.fotoUrl != null && existingByEmail.fotoUrl!.isNotEmpty)
+              ? existingByEmail.fotoUrl
+              : photoUrl,
+          nome: existingByEmail.nome.trim().isNotEmpty
+              ? existingByEmail.nome
+              : (displayName ?? ''),
+          updatedAt: DateTime.now(),
+        );
+
+        final updatedModel = UserModel.fromEntity(updatedData);
+        await _usersCol.doc(uid).set(updatedModel.toMap());
+
+        // Se o documento prévio tinha ID provisório diferente do uid, deleta doc antigo
+        if (oldId != uid) {
+          try {
+            await _usersCol.doc(oldId).delete();
+          } catch (_) {}
+
+          // Se tiver vínculo de cônjuge, atualiza a referência
+          if (existingByEmail.spouseId != null && existingByEmail.spouseId!.isNotEmpty) {
+            try {
+              await _usersCol.doc(existingByEmail.spouseId).update({'spouseId': uid});
+            } catch (_) {}
+          }
+        }
+
+        return updatedModel;
+      }
+
       final adminBootstrapEmail = EnvConfig.initialAdminEmail;
 
       AppRole assignedRole = AppRole.visitante;
 
-      // 1. Checagem de Bootstrap do Admin Mestre (nando.djx@gmail.com)
+      // 2. Checagem de Bootstrap do Admin Mestre (nando.djx@gmail.com)
       if (normalizedEmail == adminBootstrapEmail) {
         assignedRole = AppRole.fundador;
       } else {
-        // 2. Verifica se o e-mail possui um convite prévio emitido para ele
+        // 3. Verifica se o e-mail possui um convite prévio emitido para ele
         final pendingInvite = await findPendingInviteForEmail(normalizedEmail);
         if (pendingInvite != null) {
           assignedRole = pendingInvite.targetRole;
@@ -215,6 +253,39 @@ class FirestoreRemoteDataSource {
       return newUser;
     } catch (e) {
       throw ServerFailure('Erro ao inicializar perfil de usuário: $e');
+    }
+  }
+
+  Future<UserModel> createDirectMember(UserModel user) async {
+    try {
+      final normalizedEmail = user.email.trim().toLowerCase();
+      final existing = await getUserByEmail(normalizedEmail);
+      if (existing != null) {
+        throw const ServerFailure('Já existe um membro cadastrado com este e-mail.');
+      }
+
+      final docRef = _usersCol.doc();
+      final memberWithId = user.copyWith(
+        id: docRef.id,
+        email: normalizedEmail,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      final model = UserModel.fromEntity(memberWithId);
+      await docRef.set(model.toMap());
+      return model;
+    } catch (e) {
+      if (e is Failure) rethrow;
+      throw ServerFailure('Erro ao cadastrar membro: $e');
+    }
+  }
+
+  Future<void> deleteUser(String userId) async {
+    try {
+      await _usersCol.doc(userId).delete();
+    } catch (e) {
+      throw ServerFailure('Erro ao excluir membro: $e');
     }
   }
 

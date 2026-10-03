@@ -17,6 +17,7 @@ import '../../domain/usecases/auth/sign_out_usecase.dart';
 import '../../domain/usecases/invites/create_invite_usecase.dart';
 import '../../domain/usecases/invites/list_invites_usecase.dart';
 import '../../domain/usecases/invites/validate_invite_usecase.dart';
+import '../../domain/usecases/members/create_direct_member_usecase.dart';
 import '../../domain/usecases/members/link_spouse_usecase.dart';
 import '../../domain/usecases/members/save_member_profile_usecase.dart';
 import '../../domain/usecases/members/save_member_step_usecase.dart';
@@ -55,6 +56,7 @@ class ServiceLocator {
   late final SearchPotentialSpouseUseCase searchPotentialSpouseUseCase;
   late final LinkSpouseUseCase linkSpouseUseCase;
   late final SaveMemberStepUseCase saveMemberStepUseCase;
+  late final CreateDirectMemberUseCase createDirectMemberUseCase;
 
   void setup() {
     // DataSources
@@ -90,6 +92,7 @@ class ServiceLocator {
     searchPotentialSpouseUseCase = SearchPotentialSpouseUseCase(userRepository);
     linkSpouseUseCase = LinkSpouseUseCase(userRepository);
     saveMemberStepUseCase = SaveMemberStepUseCase(userRepository);
+    createDirectMemberUseCase = CreateDirectMemberUseCase(userRepository);
   }
 }
 

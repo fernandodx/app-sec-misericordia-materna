@@ -19,6 +19,8 @@ class MemberSearchSignal {
   final filterEtapa = signal<String?>(null);
   final filterCasado = signal<bool?>(null);
   final filterResidenciaUf = signal<String?>(null);
+  /// false = somente ativos (padrão); true = somente desativados
+  final filterInactive = signal<bool>(false);
 
   // Pagination
   final currentPage = signal<int>(1);
@@ -32,15 +34,14 @@ class MemberSearchSignal {
     filterEtapa.subscribe((_) => currentPage.value = 1);
     filterCasado.subscribe((_) => currentPage.value = 1);
     filterResidenciaUf.subscribe((_) => currentPage.value = 1);
+    filterInactive.subscribe((_) => currentPage.value = 1);
     itemsPerPage.subscribe((_) => currentPage.value = 1);
   }
 
   void initializeUserScope(UserEntity currentUser) {
     // Pre-lock or preset filters based on the current user's role scope
-    if (currentUser.role == AppRole.secretariaGeralExterna) {
-      filterTipoVida.value = TipoVida.externa;
-    } else if (currentUser.role == AppRole.secretariaGeralInterna ||
-        currentUser.role == AppRole.formador) {
+    // Secretaria Geral e Fundador cuidam de ambas as vidas (Interna e Externa)
+    if (currentUser.role == AppRole.formador) {
       filterTipoVida.value = TipoVida.interna;
     } else if (currentUser.role == AppRole.secretariaLocal) {
       if (currentUser.localidade != null && currentUser.localidade!.isNotEmpty) {
@@ -77,11 +78,16 @@ class MemberSearchSignal {
     if (current == null || !current.role.canSearchMembers) return [];
 
     return members.value.where((m) {
+      // 0. Filtro de status ativo/inativo
+      if (filterInactive.value) {
+        if (m.isAtivo) return false; // modo inativo: mostra só desativados
+      } else {
+        if (!m.isAtivo) return false; // modo padrão: esconde desativados
+      }
+
       // 1. Role-based security scoping
-      if (current.role == AppRole.secretariaGeralExterna) {
-        if (m.tipoVida != TipoVida.externa) return false;
-      } else if (current.role == AppRole.secretariaGeralInterna ||
-          current.role == AppRole.formador) {
+      // Secretaria Geral e Fundador têm acesso total a ambas as vidas
+      if (current.role == AppRole.formador) {
         if (m.tipoVida != TipoVida.interna) return false;
       } else if (current.role == AppRole.secretariaLocal) {
         if (m.localidade != current.localidade) return false;
@@ -171,9 +177,7 @@ class MemberSearchSignal {
     final current = authSignal.currentUser.value;
     if (current != null) {
       // Don't reset role-locked filters
-      if (current.role != AppRole.secretariaGeralExterna &&
-          current.role != AppRole.secretariaGeralInterna &&
-          current.role != AppRole.formador) {
+      if (current.role != AppRole.formador) {
         filterTipoVida.value = null;
       }
       if (current.role != AppRole.secretariaLocal) {
@@ -186,6 +190,7 @@ class MemberSearchSignal {
     filterEtapa.value = null;
     filterCasado.value = null;
     filterResidenciaUf.value = null;
+    filterInactive.value = false;
     currentPage.value = 1;
   }
 
@@ -293,6 +298,114 @@ class MemberSearchSignal {
       members.value = list;
 
       return true;
+    } catch (e) {
+      errorMessage.value = Failure.fromException(e).message;
+      return false;
+    } finally {
+      isSaving.value = false;
+    }
+  }
+
+  /// Desativa um membro (isAtivo = false). Ele some das buscas normais.
+  Future<bool> deactivateMember(String memberId) async {
+    final current = authSignal.currentUser.value;
+    if (current == null || !current.canDeactivateOrDeleteMember) {
+      errorMessage.value = 'Sem permissão para desativar membros.';
+      return false;
+    }
+    try {
+      isSaving.value = true;
+      errorMessage.value = null;
+      await sl.userRepository.saveUserPartial(memberId, {
+        'isAtivo': false,
+        'ativo': false,
+      });
+      // Remove da lista ativa local
+      members.value = members.value.where((m) => m.id != memberId).toList();
+      return true;
+    } catch (e) {
+      errorMessage.value = Failure.fromException(e).message;
+      return false;
+    } finally {
+      isSaving.value = false;
+    }
+  }
+
+  /// Reativa um membro previamente desativado (isAtivo = true).
+  Future<bool> reactivateMember(String memberId) async {
+    final current = authSignal.currentUser.value;
+    if (current == null || !current.canDeactivateOrDeleteMember) {
+      errorMessage.value = 'Sem permissão para reativar membros.';
+      return false;
+    }
+    try {
+      isSaving.value = true;
+      errorMessage.value = null;
+      await sl.userRepository.saveUserPartial(memberId, {
+        'isAtivo': true,
+        'ativo': true,
+      });
+      // Atualiza na lista local — muda o flag para que o filtro o mova
+      members.value = members.value.map((m) {
+        if (m.id == memberId) return m.copyWith(isAtivo: true);
+        return m;
+      }).toList();
+      return true;
+    } catch (e) {
+      errorMessage.value = Failure.fromException(e).message;
+      return false;
+    } finally {
+      isSaving.value = false;
+    }
+  }
+
+  /// Exclui definitivamente um membro do sistema.
+  Future<bool> deleteMember(String memberId) async {
+    final current = authSignal.currentUser.value;
+    if (current == null || !current.canDeactivateOrDeleteMember) {
+      errorMessage.value = 'Sem permissão para excluir membros.';
+      return false;
+    }
+    try {
+      isSaving.value = true;
+      errorMessage.value = null;
+      await sl.userRepository.deleteUser(memberId);
+      members.value = members.value.where((m) => m.id != memberId).toList();
+      return true;
+    } catch (e) {
+      errorMessage.value = Failure.fromException(e).message;
+      return false;
+    } finally {
+      isSaving.value = false;
+    }
+  }
+
+  /// Cadastra um novo membro diretamente sem convite
+  Future<bool> createDirectMember(UserEntity newMember) async {
+    final current = authSignal.currentUser.value;
+    if (current == null || !current.role.canCreateDirectMember) {
+      errorMessage.value = 'Você não possui permissão para cadastrar novos membros.';
+      return false;
+    }
+
+    try {
+      isSaving.value = true;
+      errorMessage.value = null;
+
+      final result = await sl.createDirectMemberUseCase(newMember);
+      return await result.fold(
+        (failure) {
+          errorMessage.value = failure.message;
+          return false;
+        },
+        (created) async {
+          // Atualiza lista local
+          final list = List<UserEntity>.from(members.value);
+          list.insert(0, created);
+          members.value = list;
+          return true;
+        },
+      );
     } catch (e) {
       errorMessage.value = Failure.fromException(e).message;
       return false;

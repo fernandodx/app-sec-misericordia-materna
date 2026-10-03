@@ -91,25 +91,25 @@ class _MemberDetailDialogState extends State<MemberDetailDialog> {
     }
   }
 
-  Future<void> _abrirPdfAutobiografia() async {
-    final base64Data = _member.autobiografiaPdfBase64;
-    if (base64Data == null || base64Data.isEmpty) return;
+  Future<void> _abrirAnexoAutobiografia() async {
+    final dataUri = _member.autobiografiaPdfBase64;
+    if (dataUri == null || dataUri.isEmpty) return;
 
     try {
-      final uri = Uri.parse('data:application/pdf;base64,$base64Data');
+      final uri = Uri.parse(dataUri);
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Não foi possível abrir o PDF diretamente no navegador.')),
+            const SnackBar(content: Text('Não foi possível abrir o arquivo diretamente no navegador.')),
           );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao abrir PDF: $e')),
+          SnackBar(content: Text('Erro ao abrir arquivo: $e')),
         );
       }
     }
@@ -731,7 +731,7 @@ class _MemberDetailDialogState extends State<MemberDetailDialog> {
           const SizedBox(height: 12),
           _buildVocacionalItem(colorScheme, 'Pensamento sobre o Carisma', _member.pensamentoCarisma),
           const SizedBox(height: 12),
-          _buildVocacionalItem(colorScheme, 'Chamado à Comunidade de Aliança', _member.chamadoComunidadeAlianca),
+          _buildVocacionalItem(colorScheme, 'Chamado à Instituição de Aliança', _member.chamadoComunidadeAlianca),
           const SizedBox(height: 12),
           _buildVocacionalItem(colorScheme, 'Onde mais gosta de trabalhar na Fraternidade', _member.ondeMaisGostaTrabalhar),
         ],
@@ -757,7 +757,9 @@ class _MemberDetailDialogState extends State<MemberDetailDialog> {
   }
 
   Widget _buildAutobiografiaSection(ColorScheme colorScheme) {
-    final temPdf = _member.autobiografiaPdfBase64 != null && _member.autobiografiaPdfBase64!.isNotEmpty;
+    final dataUri = _member.autobiografiaPdfBase64;
+    final temAnexo = dataUri != null && dataUri.isNotEmpty;
+    final isImage = temAnexo && dataUri.startsWith('data:image/');
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -769,7 +771,20 @@ class _MemberDetailDialogState extends State<MemberDetailDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (temPdf) ...[
+          if (temAnexo) ...[
+            // Preview de imagem
+            if (isImage) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.memory(
+                  base64Decode(dataUri.split(',').last),
+                  width: double.infinity,
+                  height: 200,
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -779,14 +794,18 @@ class _MemberDetailDialogState extends State<MemberDetailDialog> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.picture_as_pdf, color: Color(0xFF16A34A), size: 28),
+                  Icon(
+                    isImage ? Icons.image_outlined : Icons.picture_as_pdf,
+                    color: isImage ? Colors.blue.shade700 : const Color(0xFF16A34A),
+                    size: 28,
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _member.autobiografiaPdfNome ?? 'autobiografia.pdf',
+                          _member.autobiografiaPdfNome ?? (isImage ? 'autobiografia.jpg' : 'autobiografia.pdf'),
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -797,21 +816,21 @@ class _MemberDetailDialogState extends State<MemberDetailDialog> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Documento PDF anexado pelo membro',
+                          isImage ? 'Imagem anexada pelo membro' : 'Documento PDF anexado pelo membro',
                           style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
                         ),
                       ],
                     ),
                   ),
                   ElevatedButton.icon(
-                    onPressed: _abrirPdfAutobiografia,
+                    onPressed: _abrirAnexoAutobiografia,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF16A34A),
+                      backgroundColor: isImage ? Colors.blue.shade700 : const Color(0xFF16A34A),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                     icon: const Icon(Icons.open_in_new, size: 16),
-                    label: const Text('Visualizar PDF'),
+                    label: Text(isImage ? 'Visualizar Imagem' : 'Visualizar PDF'),
                   ),
                 ],
               ),

@@ -6,14 +6,16 @@ import 'package:app_secretaria/domain/entities/user_entity.dart';
 
 void main() {
   group('Regras de Etapas por Tipo de Vida', () {
-    test('Retorna as 7 etapas oficiais de Vida Interna', () {
+    test('Retorna as 9 etapas oficiais de Vida Interna (incluindo Celibatários e Família)', () {
       final etapas = CadastroConstants.etapasPorTipoVida(TipoVida.interna);
-      expect(etapas.length, equals(7));
+      expect(etapas.length, equals(9));
       expect(etapas.first, equals('Aspirantado'));
-      expect(etapas.last, equals('Formador'));
       expect(etapas, contains('Postulantado I'));
       expect(etapas, contains('Noviciado I'));
       expect(etapas, contains('Consagrado'));
+      expect(etapas, contains('Formador'));
+      expect(etapas, contains('Celibatários'));
+      expect(etapas, contains('Família'));
     });
 
     test('Retorna as 10 etapas oficiais de Vida Externa', () {

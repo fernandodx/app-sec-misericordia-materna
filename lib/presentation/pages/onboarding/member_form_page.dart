@@ -10,6 +10,7 @@ import '../../../core/constants/cadastro_constants.dart';
 import '../../../core/constants/localidades.dart';
 import '../../../core/di/dependency_injection.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/image_compressor.dart';
 import '../../../domain/entities/user_entity.dart';
 import '../../signals/auth_signal.dart';
 import '../../signals/member_form_signal.dart';
@@ -36,9 +37,12 @@ class _MemberFormPageState extends State<MemberFormPage> {
   late final TextEditingController _cpfController;
   late final TextEditingController _tituloEleitorController;
   late final TextEditingController _profissaoController;
+  late final TextEditingController _nomeReligiosoController;
+  late final TextEditingController _nomeComercialController;
   String _escolaridade = CadastroConstants.escolaridades.first;
 
   // Step 2 Controllers
+  final _formKeyStep2 = GlobalKey<FormState>();
   final _filhoNameController = TextEditingController();
   final _filhoDataNascimentoController = TextEditingController();
   final _filhoDialogFormKey = GlobalKey<FormState>();
@@ -83,7 +87,7 @@ class _MemberFormPageState extends State<MemberFormPage> {
   late final TextEditingController _autobioHistoriaController;
   late final TextEditingController _autobioFamiliaController;
   late final TextEditingController _autobioIgrejaController;
-  int _autobioMode = 0; // 0 = Texto por tópicos, 1 = Upload PDF
+  int _autobioMode = 0; // 0 = Texto por tópicos, 1 = Upload Arquivo (PDF ou Imagem)
 
   late final phoneFormatter = AppFormatters.phoneFormatter();
   late final cpfFormatter = AppFormatters.cpfFormatter();
@@ -107,6 +111,8 @@ class _MemberFormPageState extends State<MemberFormPage> {
     _cpfController = TextEditingController(text: user?.cpf ?? '');
     _tituloEleitorController = TextEditingController(text: user?.tituloEleitor ?? '');
     _profissaoController = TextEditingController(text: user?.profissao ?? '');
+    _nomeReligiosoController = TextEditingController(text: user?.nomeReligioso ?? '');
+    _nomeComercialController = TextEditingController(text: user?.nomeComercial ?? '');
     _escolaridade = user?.escolaridade ?? CadastroConstants.escolaridades.first;
 
     _cepController = TextEditingController(text: user?.cep ?? '');
@@ -260,6 +266,8 @@ class _MemberFormPageState extends State<MemberFormPage> {
     _cpfController.dispose();
     _tituloEleitorController.dispose();
     _profissaoController.dispose();
+    _nomeReligiosoController.dispose();
+    _nomeComercialController.dispose();
     _filhoNameController.dispose();
     _filhoDataNascimentoController.dispose();
     _irmaoNameController.dispose();
@@ -338,6 +346,8 @@ class _MemberFormPageState extends State<MemberFormPage> {
   Future<void> _handleNextStep() async {
     final step = memberFormSignal.currentStep.value;
 
+    bool ok = false;
+
     if (step == 1) {
       if (!_formKeyStep1.currentState!.validate()) return;
       final hasPhoto = memberFormSignal.selectedPhotoBytes.value != null ||
@@ -353,7 +363,7 @@ class _MemberFormPageState extends State<MemberFormPage> {
         return;
       }
 
-      await memberFormSignal.saveStep(
+      ok = await memberFormSignal.saveStep(
         stepNumber: 1,
         stepData: {
           'nome': _nameController.text.trim(),
@@ -364,20 +374,25 @@ class _MemberFormPageState extends State<MemberFormPage> {
               ? _nomeConjugeController.text.trim()
               : null,
           'spouseId': memberFormSignal.linkedSpouse.value?.id,
-          'nomePai': !memberFormSignal.isCasado.value ? _nomePaiController.text.trim() : null,
-          'nomeMae': !memberFormSignal.isCasado.value ? _nomeMaeController.text.trim() : null,
           'rg': _rgController.text.trim(),
           'cpf': _cpfController.text.trim(),
           'tituloEleitor': _tituloEleitorController.text.trim(),
           'profissao': _profissaoController.text.trim(),
           'escolaridade': _escolaridade,
+          if (_nomeReligiosoController.text.trim().isNotEmpty)
+            'nomeReligioso': _nomeReligiosoController.text.trim(),
+          if (_nomeComercialController.text.trim().isNotEmpty)
+            'nomeComercial': _nomeComercialController.text.trim(),
         },
       );
     } else if (step == 2) {
+      if (!_formKeyStep2.currentState!.validate()) return;
       if (memberFormSignal.isCasado.value) {
-        await memberFormSignal.saveStep(
+        ok = await memberFormSignal.saveStep(
           stepNumber: 2,
           stepData: {
+            'nomePai': _nomePaiController.text.trim(),
+            'nomeMae': _nomeMaeController.text.trim(),
             'possuiFilhos': memberFormSignal.possuiFilhos.value,
             'quantidadeFilhos': memberFormSignal.filhos.value.length,
             'filhos': memberFormSignal.filhos.value.map((f) => f.toMap()).toList(),
@@ -385,9 +400,11 @@ class _MemberFormPageState extends State<MemberFormPage> {
           },
         );
       } else {
-        await memberFormSignal.saveStep(
+        ok = await memberFormSignal.saveStep(
           stepNumber: 2,
           stepData: {
+            'nomePai': _nomePaiController.text.trim(),
+            'nomeMae': _nomeMaeController.text.trim(),
             'possuiIrmaos': memberFormSignal.possuiIrmaos.value,
             'irmaos': memberFormSignal.irmaos.value,
           },
@@ -395,7 +412,7 @@ class _MemberFormPageState extends State<MemberFormPage> {
       }
     } else if (step == 3) {
       if (!_formKeyStep3.currentState!.validate()) return;
-      await memberFormSignal.saveStep(
+      ok = await memberFormSignal.saveStep(
         stepNumber: 3,
         stepData: {
           'cep': _cepController.text.trim(),
@@ -416,13 +433,13 @@ class _MemberFormPageState extends State<MemberFormPage> {
       if (_tipoVida != null) stepData['tipoVida'] = _tipoVida!.key;
       if (_localidade != null) stepData['localidade'] = _localidade;
 
-      await memberFormSignal.saveStep(
+      ok = await memberFormSignal.saveStep(
         stepNumber: 4,
         stepData: stepData,
       );
     } else if (step == 5) {
       if (!_formKeyStep5.currentState!.validate()) return;
-      await memberFormSignal.saveStep(
+      ok = await memberFormSignal.saveStep(
         stepNumber: 5,
         stepData: {
           'paroquia': _paroquiaController.text.trim(),
@@ -435,7 +452,23 @@ class _MemberFormPageState extends State<MemberFormPage> {
               : null,
         },
       );
-    } else if (step == 6) {
+    }
+
+    // Para etapas 1–5: se o save falhou, mostra erro e permanece na etapa
+    if (step < 6 && !ok && mounted) {
+      final errMsg = memberFormSignal.errorMessage.value;
+      if (errMsg != null && errMsg.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errMsg),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (step == 6) {
       if (!_formKeyStep6.currentState!.validate()) return;
       final isCasado = memberFormSignal.isCasado.value;
 
@@ -811,7 +844,7 @@ class _MemberFormPageState extends State<MemberFormPage> {
                     border: Border.all(color: colorScheme.outlineVariant),
                   ),
                   child: Text(
-                    'Para o desenvolvimento do trabalho da equipe de formação é necessário que conheçamos um pouco mais a sua história de vida, pois você demonstra querer seguir o caminho que leva a Cristo em nossa Comunidade. Assim peço que você redija uma autobiografia em forma de redação (texto corrido). A partir dela poderemos iniciar um processo que nos levará a um mútuo conhecimento e assim podermos ajudá-lo(a) no seu discernimento vocacional.\n\n'
+                    'Para o desenvolvimento do trabalho da equipe de formação é necessário que conheçamos um pouco mais a sua história de vida, pois você demonstra querer seguir o caminho que leva a Cristo em nossa Instituição. Assim peço que você redija uma autobiografia em forma de redação (texto corrido). A partir dela poderemos iniciar um processo que nos levará a um mútuo conhecimento e assim podermos ajudá-lo(a) no seu discernimento vocacional.\n\n'
                     'Lembre-se: não se trata de uma autobiografia para preencher requisitos burocráticos ou para demonstrar conhecimentos, mas sim de um instrumento de trabalho que nos ajudará a conhecê-lo(a) melhor. Portanto, seja sincero(a) e espontâneo(a).',
                     style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
                   ),
@@ -904,25 +937,28 @@ class _MemberFormPageState extends State<MemberFormPage> {
     );
   }
 
-  Future<void> _pickAutobiografiaPdf() async {
+  Future<void> _pickAutobiografiaArquivo() async {
     try {
       final file = await FilePicker.pickFile(
         type: FileType.custom,
-        allowedExtensions: ['pdf'],
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
       );
 
       if (file != null) {
         final bytes = await file.readAsBytes();
+        final ext = file.name.split('.').last.toLowerCase();
+        final isImage = ['jpg', 'jpeg', 'png'].contains(ext);
 
-        // 1MB = 1,048,576 bytes
-        const maxBytes = 1048576;
+        // Limite: 1MB para PDF, 3MB para imagem (antes da compressão)
+        final maxBytes = isImage ? 3 * 1024 * 1024 : 1048576;
         if (bytes.length > maxBytes) {
           final sizeMb = (bytes.length / (1024 * 1024)).toStringAsFixed(2);
+          final limite = isImage ? '3MB' : '1MB';
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  'O arquivo possui $sizeMb MB e excede o limite máximo permitido de 1MB. Por favor, utilize uma versão comprimida.',
+                  'O arquivo possui $sizeMb MB e excede o limite de $limite.',
                 ),
                 backgroundColor: Colors.red.shade700,
               ),
@@ -931,17 +967,35 @@ class _MemberFormPageState extends State<MemberFormPage> {
           return;
         }
 
-        final base64String = 'data:application/pdf;base64,${base64Encode(bytes)}';
+        String base64String;
+        String nomeArquivo = file.name;
+
+        if (isImage) {
+          // Comprimir imagem mas manter resolução razoável (800x800)
+          final compressedBytes = await ImageCompressor.compressImage(
+            bytes,
+            maxWidth: 800,
+            maxHeight: 800,
+            targetQuality: 75,
+          );
+          base64String = 'data:image/jpeg;base64,${base64Encode(compressedBytes)}';
+          // Normaliza extensão para .jpg
+          nomeArquivo = nomeArquivo.replaceAll(RegExp(r'\.(jpg|jpeg|png)$', caseSensitive: false), '.jpg');
+        } else {
+          base64String = 'data:application/pdf;base64,${base64Encode(bytes)}';
+        }
+
         memberFormSignal.setAutobiografiaPdf(
           base64: base64String,
-          nome: file.name,
+          nome: nomeArquivo,
         );
 
         final sizeKb = (bytes.length / 1024).toStringAsFixed(1);
+        final tipo = isImage ? 'Imagem' : 'PDF';
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('PDF "${file.name}" ($sizeKb KB) anexado com sucesso!'),
+              content: Text('$tipo "$nomeArquivo" ($sizeKb KB) anexado com sucesso!'),
               backgroundColor: Colors.green.shade700,
             ),
           );
@@ -951,7 +1005,7 @@ class _MemberFormPageState extends State<MemberFormPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Erro ao selecionar arquivo PDF: $e'),
+            content: Text('Erro ao selecionar arquivo: $e'),
             backgroundColor: Colors.red.shade700,
           ),
         );
@@ -1121,7 +1175,7 @@ class _MemberFormPageState extends State<MemberFormPage> {
 
     final titles = [
       'Pessoal',
-      memberFormSignal.isCasado.value ? 'Filhos' : 'Família',
+      'Família',
       'Endereço',
       'Etapa',
       'Religião',
@@ -1226,7 +1280,7 @@ class _MemberFormPageState extends State<MemberFormPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            isCasado ? 'Etapa 1: Dados Pessoais & Cônjuge' : 'Etapa 1: Dados Pessoais & Filiação',
+            isCasado ? 'Etapa 1: Dados Pessoais & Cônjuge' : 'Etapa 1: Dados Pessoais',
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.bold,
               color: colorScheme.primary,
@@ -1304,6 +1358,32 @@ class _MemberFormPageState extends State<MemberFormPage> {
             validator: (v) => (v == null || v.trim().isEmpty) ? 'Informe seu nome completo' : null,
           ),
           const SizedBox(height: 14),
+
+          // Nomes adicionais (apenas para Vida Interna)
+          if (_tipoVida == TipoVida.interna) ...[
+            TextFormField(
+              controller: _nomeReligiosoController,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Nome Religioso (Opcional)',
+                prefixIcon: Icon(Icons.church_outlined),
+                border: OutlineInputBorder(),
+                helperText: 'Nome adotado na vida religiosa/consagrada',
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _nomeComercialController,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Nome Comercial (Opcional)',
+                prefixIcon: Icon(Icons.business_outlined),
+                border: OutlineInputBorder(),
+                helperText: 'Nome profissional ou de trabalho',
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
 
           // Data de Nascimento (Obrigatória para todos)
           Builder(
@@ -1385,11 +1465,10 @@ class _MemberFormPageState extends State<MemberFormPage> {
                 child: TextFormField(
                   controller: _rgController,
                   decoration: const InputDecoration(
-                    labelText: 'RG *',
+                    labelText: 'RG (Opcional)',
                     prefixIcon: Icon(Icons.badge_outlined),
                     border: OutlineInputBorder(),
                   ),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Informe o RG' : null,
                 ),
               ),
               const SizedBox(width: 12),
@@ -1629,53 +1708,6 @@ class _MemberFormPageState extends State<MemberFormPage> {
                     ],
                   ],
                 ],
-                if (!isCasado) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    'Filiação (Pais)',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Informações sobre seus pais para seu registro comunitário.',
-                    style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _nomePaiController,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(
-                      labelText: 'Nome do Pai *',
-                      prefixIcon: Icon(Icons.person_outline),
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (v) {
-                      if (!memberFormSignal.isCasado.value && (v == null || v.trim().isEmpty)) {
-                        return 'Informe o nome do seu pai';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _nomeMaeController,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(
-                      labelText: 'Nome da Mãe *',
-                      prefixIcon: Icon(Icons.person_outline),
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (v) {
-                      if (!memberFormSignal.isCasado.value && (v == null || v.trim().isEmpty)) {
-                        return 'Informe o nome da sua mãe';
-                      }
-                      return null;
-                    },
-                  ),
-                ],
               ],
             ),
           ),
@@ -1684,7 +1716,7 @@ class _MemberFormPageState extends State<MemberFormPage> {
     );
   }
 
-  // ETAPA 2: Filhos & Família (Casados) / Família & Irmãos (Solteiros)
+  // ETAPA 2: Família (Pais, Filhos e Irmãos)
   Widget _buildStep2(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -1694,24 +1726,92 @@ class _MemberFormPageState extends State<MemberFormPage> {
     final possuiIrmaos = memberFormSignal.possuiIrmaos.value;
     final irmaos = memberFormSignal.irmaos.value;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          isCasado ? 'Etapa 2: Filhos & Família' : 'Etapa 2: Família & Irmãos',
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: colorScheme.primary,
+    return Form(
+      key: _formKeyStep2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            isCasado ? 'Etapa 2: Família & Filhos' : 'Etapa 2: Família & Irmãos',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: colorScheme.primary,
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          isCasado
-              ? 'Informações sobre seus filhos para a pastoral familiar.'
-              : 'Informações sobre seus irmãos e estrutura familiar.',
-          style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
-        ),
-        const SizedBox(height: 24),
+          const SizedBox(height: 4),
+          Text(
+            isCasado
+                ? 'Informações sobre seus pais, filhos e estrutura familiar.'
+                : 'Informações sobre seus pais, irmãos e estrutura familiar.',
+            style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 24),
+
+          // Card: Filiação (Pais)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: colorScheme.outlineVariant),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.family_restroom, color: colorScheme.primary, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Filiação (Pais)',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Informações sobre seus pais para seu registro comunitário.',
+                  style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _nomePaiController,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Nome do Pai *',
+                    prefixIcon: Icon(Icons.person_outline),
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Informe o nome do seu pai';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _nomeMaeController,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Nome da Mãe *',
+                    prefixIcon: Icon(Icons.person_outline),
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Informe o nome da sua mãe';
+                    }
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
 
         if (isCasado) ...[
           Container(
@@ -1865,8 +1965,9 @@ class _MemberFormPageState extends State<MemberFormPage> {
           ),
         ],
       ],
-    );
-  }
+    ),
+  );
+}
 
   // ETAPA 3: Endereço Residencial
   Widget _buildStep3(BuildContext context) {
@@ -2047,7 +2148,7 @@ class _MemberFormPageState extends State<MemberFormPage> {
     );
   }
 
-  // ETAPA 4: Vínculo Comunitário & Caminho na Fraternidade
+  // ETAPA 4: Vínculo Institucional & Caminho na Fraternidade
   Widget _buildStep4(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -2061,7 +2162,7 @@ class _MemberFormPageState extends State<MemberFormPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Etapa 4: Vínculo Comunitário & Caminho Vocacional',
+          'Etapa 4: Vínculo Institucional & Caminho Vocacional',
           style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.bold,
             color: colorScheme.primary,
@@ -2287,6 +2388,7 @@ class _MemberFormPageState extends State<MemberFormPage> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final participaPastoral = memberFormSignal.participaPastoral.value;
+    final isVidaInterna = _tipoVida == TipoVida.interna;
 
     return Form(
       key: _formKeyStep5,
@@ -2302,78 +2404,82 @@ class _MemberFormPageState extends State<MemberFormPage> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Informações sobre sua participação na paróquia e comunidade eclesial.',
+            isVidaInterna
+                ? 'Informações sobre participação em pastorais e movimentos eclesiais.'
+                : 'Informações sobre sua participação na paróquia e comunidade eclesial.',
             style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 20),
 
-          // Paróquia
-          TextFormField(
-            controller: _paroquiaController,
-            decoration: const InputDecoration(
-              labelText: 'Paróquia que participa *',
-              prefixIcon: Icon(Icons.church_outlined),
-              border: OutlineInputBorder(),
+          if (!isVidaInterna) ...[
+            // Paróquia
+            TextFormField(
+              controller: _paroquiaController,
+              decoration: const InputDecoration(
+                labelText: 'Paróquia que participa *',
+                prefixIcon: Icon(Icons.church_outlined),
+                border: OutlineInputBorder(),
+              ),
+              validator: (v) => (v == null || v.trim().isEmpty) ? 'Informe a paróquia' : null,
             ),
-            validator: (v) => (v == null || v.trim().isEmpty) ? 'Informe a paróquia' : null,
-          ),
-          const SizedBox(height: 14),
+            const SizedBox(height: 14),
 
-          // Endereço da Paróquia
-          TextFormField(
-            controller: _paroquiaEnderecoController,
-            decoration: const InputDecoration(
-              labelText: 'Endereço da Paróquia',
-              prefixIcon: Icon(Icons.location_on_outlined),
-              border: OutlineInputBorder(),
+            // Endereço da Paróquia
+            TextFormField(
+              controller: _paroquiaEnderecoController,
+              decoration: const InputDecoration(
+                labelText: 'Endereço da Paróquia',
+                prefixIcon: Icon(Icons.location_on_outlined),
+                border: OutlineInputBorder(),
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
+            const SizedBox(height: 14),
 
-          // Cidade - UF da Paróquia
-          Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: TextFormField(
-                  controller: _paroquiaCidadeController,
-                  decoration: const InputDecoration(
-                    labelText: 'Cidade da Paróquia',
-                    border: OutlineInputBorder(),
+            // Cidade - UF da Paróquia
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextFormField(
+                    controller: _paroquiaCidadeController,
+                    decoration: const InputDecoration(
+                      labelText: 'Cidade da Paróquia',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 1,
-                child: DropdownButtonFormField<String>(
-                  initialValue: _paroquiaUf,
-                  decoration: const InputDecoration(
-                    labelText: 'UF',
-                    border: OutlineInputBorder(),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _paroquiaUf,
+                    decoration: const InputDecoration(
+                      labelText: 'UF',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: CadastroConstants.estadosBrasil
+                        .map((uf) => DropdownMenuItem(value: uf, child: Text(uf)))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v != null) setState(() => _paroquiaUf = v);
+                    },
                   ),
-                  items: CadastroConstants.estadosBrasil
-                      .map((uf) => DropdownMenuItem(value: uf, child: Text(uf)))
-                      .toList(),
-                  onChanged: (v) {
-                    if (v != null) setState(() => _paroquiaUf = v);
-                  },
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          // Pároco
-          TextFormField(
-            controller: _parocoController,
-            decoration: const InputDecoration(
-              labelText: 'Nome do Pároco',
-              prefixIcon: Icon(Icons.person_pin_outlined),
-              border: OutlineInputBorder(),
+              ],
             ),
-          ),
-          const SizedBox(height: 20),
+            const SizedBox(height: 14),
+
+            // Pároco
+            TextFormField(
+              controller: _parocoController,
+              decoration: const InputDecoration(
+                labelText: 'Nome do Pároco',
+                prefixIcon: Icon(Icons.person_pin_outlined),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
 
           // Pastoral / Movimento
           Container(
@@ -2532,8 +2638,8 @@ class _MemberFormPageState extends State<MemberFormPage> {
                       ),
                       ButtonSegment(
                         value: 1,
-                        icon: Icon(Icons.picture_as_pdf_outlined),
-                        label: Text('Anexar PDF (até 1MB)'),
+                        icon: Icon(Icons.attach_file_outlined),
+                        label: Text('Anexar Arquivo'),
                       ),
                     ],
                     selected: {_autobioMode},
@@ -2600,7 +2706,7 @@ class _MemberFormPageState extends State<MemberFormPage> {
               ),
               const SizedBox(height: 16),
             ] else ...[
-              // Upload PDF
+              // Upload PDF ou Imagem
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -2611,9 +2717,30 @@ class _MemberFormPageState extends State<MemberFormPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (pdfBase64 != null && pdfBase64.startsWith('data:image/')) ...[
+                      // Preview da imagem
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.memory(
+                          base64Decode(pdfBase64.split(',').last),
+                          height: 180,
+                          width: double.infinity,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                     Row(
                       children: [
-                        Icon(Icons.picture_as_pdf, color: Colors.red.shade700, size: 28),
+                        Icon(
+                          pdfBase64 != null && pdfBase64.startsWith('data:image/')
+                              ? Icons.image_outlined
+                              : Icons.picture_as_pdf,
+                          color: pdfBase64 != null
+                              ? (pdfBase64.startsWith('data:image/') ? Colors.blue.shade700 : Colors.red.shade700)
+                              : colorScheme.onSurfaceVariant,
+                          size: 28,
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
@@ -2621,8 +2748,8 @@ class _MemberFormPageState extends State<MemberFormPage> {
                             children: [
                               Text(
                                 pdfBase64 != null
-                                    ? (pdfNome ?? 'Arquivo PDF Anexado')
-                                    : 'Nenhum arquivo PDF anexado',
+                                    ? (pdfNome ?? 'Arquivo Anexado')
+                                    : 'Nenhum arquivo anexado',
                                 style: theme.textTheme.titleSmall?.copyWith(
                                   fontWeight: FontWeight.bold,
                                   color: pdfBase64 != null ? Colors.green.shade800 : null,
@@ -2630,8 +2757,8 @@ class _MemberFormPageState extends State<MemberFormPage> {
                               ),
                               Text(
                                 pdfBase64 != null
-                                    ? 'PDF pronto para envio (armazenamento otimizado)'
-                                    : 'Formatos aceitos: PDF (máx. 1MB)',
+                                    ? 'Arquivo pronto para envio'
+                                    : 'Formatos aceitos: PDF (máx. 1MB) ou Imagem (máx. 3MB)',
                                 style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
                               ),
                             ],
@@ -2643,9 +2770,9 @@ class _MemberFormPageState extends State<MemberFormPage> {
                     Row(
                       children: [
                         FilledButton.tonalIcon(
-                          onPressed: _pickAutobiografiaPdf,
+                          onPressed: _pickAutobiografiaArquivo,
                           icon: Icon(pdfBase64 != null ? Icons.refresh : Icons.upload_file),
-                          label: Text(pdfBase64 != null ? 'Trocar PDF' : 'Selecionar Arquivo PDF'),
+                          label: Text(pdfBase64 != null ? 'Trocar Arquivo' : 'Selecionar Arquivo (PDF ou Foto)'),
                         ),
                         if (pdfBase64 != null) ...[
                           const SizedBox(width: 8),
@@ -2711,12 +2838,12 @@ class _MemberFormPageState extends State<MemberFormPage> {
           ),
           const SizedBox(height: 16),
 
-          // Comunidade ou Aliança
+          // Instituição ou Aliança
           TextFormField(
             controller: _comunidadeAliancaController,
             maxLines: 3,
             decoration: const InputDecoration(
-              labelText: 'Chamado à vida em comunidade ou em aliança? Comente *',
+              labelText: 'Chamado à vida na instituição ou em aliança? Comente *',
               alignLabelWithHint: true,
               border: OutlineInputBorder(),
             ),
@@ -2730,7 +2857,7 @@ class _MemberFormPageState extends State<MemberFormPage> {
               controller: _disponibilidadeCasalController,
               maxLines: 3,
               decoration: const InputDecoration(
-                labelText: 'Disponibilidade para exigências da comunidade *',
+                labelText: 'Disponibilidade para exigências da instituição *',
                 hintText: 'Formações, missões, encontros e funções...',
                 alignLabelWithHint: true,
                 border: OutlineInputBorder(),

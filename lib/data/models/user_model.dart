@@ -11,6 +11,10 @@ class UserModel extends UserEntity {
     required super.telefone,
     super.fotoUrl,
     required super.role,
+    super.roles,
+    super.isAtivo,
+    super.nomeReligioso,
+    super.nomeComercial,
     super.tipoVida,
     super.localidade,
     super.supervisorId,
@@ -76,6 +80,10 @@ class UserModel extends UserEntity {
       telefone: entity.telefone,
       fotoUrl: entity.fotoUrl,
       role: entity.role,
+      roles: entity.roles,
+      isAtivo: entity.isAtivo,
+      nomeReligioso: entity.nomeReligioso,
+      nomeComercial: entity.nomeComercial,
       tipoVida: entity.tipoVida,
       localidade: entity.localidade,
       supervisorId: entity.supervisorId,
@@ -185,13 +193,31 @@ class UserModel extends UserEntity {
       parsedIrmaos = (data['irmaos'] as List).map((e) => e.toString()).toList();
     }
 
+    final primaryRole = parseRole(data['role']);
+    List<AppRole> parsedRoles = [];
+    if (data['roles'] is List) {
+      parsedRoles = (data['roles'] as List)
+          .map((e) => AppRole.fromKey(e?.toString()))
+          .toSet()
+          .toList();
+    }
+    if (parsedRoles.isEmpty) {
+      parsedRoles = [primaryRole];
+    } else if (!parsedRoles.contains(primaryRole)) {
+      parsedRoles.insert(0, primaryRole);
+    }
+
     return UserModel(
       id: id,
       email: data['email'] as String? ?? '',
       nome: data['nome'] as String? ?? '',
       telefone: data['telefone'] as String? ?? '',
       fotoUrl: data['fotoUrl'] as String?,
-      role: parseRole(data['role']),
+      role: primaryRole,
+      roles: parsedRoles,
+      isAtivo: (data['isAtivo'] as bool?) ?? (data['ativo'] as bool?) ?? true,
+      nomeReligioso: data['nomeReligioso'] as String?,
+      nomeComercial: data['nomeComercial'] as String?,
       tipoVida: parseTipoVida(data['tipoVida'] ?? data['tipo_vida']),
       localidade: parseLocalidade(data['localidade'] ?? data['fraternidade'] ?? data['localidadeFraternidade']),
       supervisorId: data['supervisorId'] as String?,
@@ -257,6 +283,11 @@ class UserModel extends UserEntity {
       'telefone': telefone,
       'fotoUrl': fotoUrl,
       'role': role.key,
+      'roles': activeRoles.map((r) => r.key).toList(),
+      'isAtivo': isAtivo,
+      'ativo': isAtivo,
+      'nomeReligioso': nomeReligioso,
+      'nomeComercial': nomeComercial,
       'tipoVida': tipoVida?.key,
       'localidade': localidade,
       'supervisorId': supervisorId,

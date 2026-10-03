@@ -1,9 +1,15 @@
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/app_roles.dart';
 import '../../../core/constants/cadastro_constants.dart';
 import '../../../core/constants/localidades.dart';
+import '../../../core/di/dependency_injection.dart';
 import '../../../core/services/viacep_service.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/image_compressor.dart';
 import '../../../domain/entities/user_entity.dart';
 import '../../signals/auth_signal.dart';
 import '../../signals/member_search_signal.dart';
@@ -89,12 +95,25 @@ class _MemberEditPageState extends State<MemberEditPage>
   late final TextEditingController _autobiografiaHistoriaController;
   late final TextEditingController _autobiografiaFamiliaController;
   late final TextEditingController _autobiografiaIgrejaController;
+  // Attachment de autobiografia (PDF ou imagem)
+  String? _autobioAnexoBase64;  // data URI (data:application/pdf;... ou data:image/...)
+  String? _autobioAnexoNome;
+  int _autobioMode = 0; // 0 = Texto, 1 = Arquivo
 
   // 6. Institucional
   late TipoVida _tipoVida;
   late String _localidade;
   late String _etapaFraternidade;
   late AppRole _role;
+  late List<AppRole> _roles; // Multi-perfil
+
+  // Nomes adicionais (Vida Interna)
+  late final TextEditingController _nomeReligiosoController;
+  late final TextEditingController _nomeComercialController;
+
+  // Foto de perfil
+  Uint8List? _newPhotoBytes;   // bytes selecionados localmente (ainda não salvos)
+  String? _currentPhotoUrl;    // URL/base64 atual do membro
 
   bool _isSaving = false;
 
@@ -104,6 +123,7 @@ class _MemberEditPageState extends State<MemberEditPage>
     _tabController = TabController(length: 6, vsync: this);
 
     final m = widget.member;
+    _currentPhotoUrl = m.fotoUrl;
 
     // Pessoal
     _nomeController = TextEditingController(text: m.nome);
@@ -177,6 +197,9 @@ class _MemberEditPageState extends State<MemberEditPage>
         TextEditingController(text: m.autobiografiaFamilia ?? '');
     _autobiografiaIgrejaController =
         TextEditingController(text: m.autobiografiaIgreja ?? '');
+    _autobioAnexoBase64 = m.autobiografiaPdfBase64;
+    _autobioAnexoNome = m.autobiografiaPdfNome;
+    _autobioMode = (_autobioAnexoBase64 != null && _autobioAnexoBase64!.isNotEmpty) ? 1 : 0;
 
     // Institucional
     _tipoVida = m.tipoVida ?? TipoVida.externa;
@@ -192,6 +215,11 @@ class _MemberEditPageState extends State<MemberEditPage>
     }
 
     _role = m.role;
+    _roles = List<AppRole>.from(m.activeRoles);
+
+    // Nomes adicionais (Vida Interna)
+    _nomeReligiosoController = TextEditingController(text: m.nomeReligioso ?? '');
+    _nomeComercialController = TextEditingController(text: m.nomeComercial ?? '');
   }
 
   @override
@@ -209,6 +237,8 @@ class _MemberEditPageState extends State<MemberEditPage>
     _profissaoController.dispose();
     _nomePaiController.dispose();
     _nomeMaeController.dispose();
+    _nomeReligiosoController.dispose();
+    _nomeComercialController.dispose();
 
     _cepController.dispose();
     _logradouroController.dispose();
@@ -240,6 +270,131 @@ class _MemberEditPageState extends State<MemberEditPage>
     _autobiografiaIgrejaController.dispose();
 
     super.dispose();
+  }
+
+  void _showPhotoPickerModal() {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Escolher da Galeria'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickPhoto(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Tirar Foto com Câmera'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickPhoto(ImageSource.camera);
+              },
+            ),
+            if (_currentPhotoUrl != null && _currentPhotoUrl!.isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                title: const Text('Remover Foto', style: TextStyle(color: Colors.redAccent)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  setState(() {
+                    _newPhotoBytes = null;
+                    _currentPhotoUrl = null;
+                  });
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickPhoto(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: source,
+        maxWidth: 1600,
+        maxHeight: 1600,
+      );
+      if (picked != null && mounted) {
+        final bytes = await picked.readAsBytes();
+        setState(() => _newPhotoBytes = bytes);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao selecionar imagem: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickAutobiografiaAnexo() async {
+    try {
+      final file = await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+      );
+      if (file != null) {
+        final bytes = await file.readAsBytes();
+        final ext = file.name.split('.').last.toLowerCase();
+        final isImage = ['jpg', 'jpeg', 'png'].contains(ext);
+        final maxBytes = isImage ? 3 * 1024 * 1024 : 1048576;
+        if (bytes.length > maxBytes) {
+          final sizeMb = (bytes.length / (1024 * 1024)).toStringAsFixed(2);
+          final limite = isImage ? '3MB' : '1MB';
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('O arquivo possui $sizeMb MB e excede o limite de $limite.'),
+                backgroundColor: Colors.red.shade700,
+              ),
+            );
+          }
+          return;
+        }
+        String base64String;
+        String nomeArquivo = file.name;
+        if (isImage) {
+          final compressedBytes = await ImageCompressor.compressImage(
+            bytes,
+            maxWidth: 800,
+            maxHeight: 800,
+            targetQuality: 75,
+          );
+          base64String = 'data:image/jpeg;base64,${base64Encode(compressedBytes)}';
+          nomeArquivo = nomeArquivo.replaceAll(RegExp(r'\.(jpg|jpeg|png)$', caseSensitive: false), '.jpg');
+        } else {
+          base64String = 'data:application/pdf;base64,${base64Encode(bytes)}';
+        }
+        setState(() {
+          _autobioAnexoBase64 = base64String;
+          _autobioAnexoNome = nomeArquivo;
+        });
+        final tipo = isImage ? 'Imagem' : 'PDF';
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$tipo "$nomeArquivo" anexado com sucesso!'),
+              backgroundColor: Colors.green.shade700,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao selecionar arquivo: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _buscarCep() async {
@@ -420,10 +575,28 @@ class _MemberEditPageState extends State<MemberEditPage>
     setState(() => _isSaving = true);
 
     try {
+      // Upload da nova foto, se selecionada
+      if (_newPhotoBytes != null) {
+        final result = await sl.uploadMemberPhotoUseCase(
+          userId: widget.member.id,
+          rawImageBytes: _newPhotoBytes!,
+        );
+        result.fold(
+          (failure) {
+            // falha no upload não bloqueia o salvamento; mantém a foto existente
+          },
+          (newUrl) {
+            _currentPhotoUrl = newUrl;
+            _newPhotoBytes = null;
+          },
+        );
+      }
+
       final anoVoc = int.tryParse(_anoProcessoVocacionalController.text.trim());
 
       final updated = widget.member.copyWith(
         // Pessoal
+        fotoUrl: _currentPhotoUrl,
         nome: _nomeController.text.trim(),
         email: _emailController.text.trim().toLowerCase(),
         telefone: _telefoneController.text.trim(),
@@ -552,12 +725,23 @@ class _MemberEditPageState extends State<MemberEditPage>
             _autobiografiaIgrejaController.text.trim().isNotEmpty
                 ? _autobiografiaIgrejaController.text.trim()
                 : null,
+        autobiografiaPdfBase64: _autobioAnexoBase64,
+        autobiografiaPdfNome: _autobioAnexoNome,
 
         // Institucional
         tipoVida: _tipoVida,
         localidade: _localidade,
         etapaFraternidade: _etapaFraternidade,
         role: _role,
+        roles: _roles.contains(_role)
+            ? _roles
+            : [_role, ..._roles],
+        nomeReligioso: _nomeReligiosoController.text.trim().isNotEmpty
+            ? _nomeReligiosoController.text.trim()
+            : null,
+        nomeComercial: _nomeComercialController.text.trim().isNotEmpty
+            ? _nomeComercialController.text.trim()
+            : null,
       );
 
       final success = await memberSearchSignal.saveFullMember(updated);
@@ -731,9 +915,72 @@ class _MemberEditPageState extends State<MemberEditPage>
   // TAB 1: DADOS PESSOAIS & DOCUMENTOS
   // ==========================================
   Widget _buildTabPessoal(ColorScheme colorScheme) {
+    // Resolve qual ImageProvider exibir: novo bytes > URL atual > nenhum
+    ImageProvider? avatarImage;
+    if (_newPhotoBytes != null) {
+      avatarImage = MemoryImage(_newPhotoBytes!);
+    } else if (_currentPhotoUrl != null && _currentPhotoUrl!.isNotEmpty) {
+      if (_currentPhotoUrl!.startsWith('data:image')) {
+        try {
+          final b64 = _currentPhotoUrl!.split(',').last;
+          avatarImage = MemoryImage(base64Decode(b64));
+        } catch (_) {}
+      } else if (_currentPhotoUrl!.startsWith('http')) {
+        avatarImage = NetworkImage(_currentPhotoUrl!);
+      }
+    }
+
+    final canEditPhoto = authSignal.currentUser.value?.canEditMemberInstitutional ?? false;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // ─── Foto de Perfil ───
+        Center(
+          child: Column(
+            children: [
+              Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 52,
+                    backgroundColor: colorScheme.surfaceContainerHighest,
+                    backgroundImage: avatarImage,
+                    child: avatarImage == null
+                        ? Icon(Icons.person, size: 52, color: colorScheme.onSurfaceVariant)
+                        : null,
+                  ),
+                  if (canEditPhoto)
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Material(
+                        color: colorScheme.primary,
+                        shape: const CircleBorder(),
+                        elevation: 2,
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: _showPhotoPickerModal,
+                          child: const Padding(
+                            padding: EdgeInsets.all(8),
+                            child: Icon(Icons.camera_alt, size: 18, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              if (_newPhotoBytes != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Nova foto selecionada — será salva ao clicar em Salvar',
+                  style: TextStyle(fontSize: 12, color: colorScheme.primary),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+
         _buildSectionHeader(
           colorScheme,
           Icons.badge_outlined,
@@ -917,24 +1164,6 @@ class _MemberEditPageState extends State<MemberEditPage>
             ),
           ],
         ),
-        const SizedBox(height: 14),
-        TextFormField(
-          controller: _nomePaiController,
-          decoration: const InputDecoration(
-            labelText: 'Nome do Pai',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.male),
-          ),
-        ),
-        const SizedBox(height: 14),
-        TextFormField(
-          controller: _nomeMaeController,
-          decoration: const InputDecoration(
-            labelText: 'Nome da Mãe',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.female),
-          ),
-        ),
       ],
     );
   }
@@ -1094,12 +1323,51 @@ class _MemberEditPageState extends State<MemberEditPage>
   }
 
   // ==========================================
-  // TAB 3: FAMÍLIA & VÍNCULOS
+  // TAB 3: FAMÍLIA & FILIAÇÃO
   // ==========================================
   Widget _buildTabFamilia(ColorScheme colorScheme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _buildSectionHeader(
+          colorScheme,
+          Icons.family_restroom,
+          'Filiação (Pais)',
+        ),
+        const SizedBox(height: 12),
+        Card(
+          elevation: 0,
+          color: colorScheme.surfaceContainerHigh,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: colorScheme.outlineVariant),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                TextFormField(
+                  controller: _nomePaiController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nome do Pai',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.male),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _nomeMaeController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nome da Mãe',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.female),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
         _buildSectionHeader(
           colorScheme,
           Icons.favorite_outline,
@@ -1309,59 +1577,83 @@ class _MemberEditPageState extends State<MemberEditPage>
   // TAB 4: VIVÊNCIA ECLESIAL & PAROQUIAL
   // ==========================================
   Widget _buildTabIgreja(ColorScheme colorScheme) {
+    final isVidaInterna = _tipoVida == TipoVida.interna;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionHeader(
-          colorScheme,
-          Icons.church_outlined,
-          'Paróquia & Comunidade Eclesial',
-        ),
-        const SizedBox(height: 16),
-        TextFormField(
-          controller: _paroquiaController,
-          decoration: const InputDecoration(
-            labelText: 'Nome da Paróquia onde congrega',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.account_balance_outlined),
+        if (!isVidaInterna) ...[
+          _buildSectionHeader(
+            colorScheme,
+            Icons.church_outlined,
+            'Paróquia & Comunidade Eclesial',
           ),
-        ),
-        const SizedBox(height: 14),
-        TextFormField(
-          controller: _paroquiaEnderecoController,
-          decoration: const InputDecoration(
-            labelText: 'Endereço da Paróquia',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.map_outlined),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _paroquiaController,
+            decoration: const InputDecoration(
+              labelText: 'Nome da Paróquia onde congrega',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.account_balance_outlined),
+            ),
           ),
-        ),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            Expanded(
-              child: TextFormField(
-                controller: _paroquiaCidadeUfController,
-                decoration: const InputDecoration(
-                  labelText: 'Cidade / UF da Paróquia',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.location_city_outlined),
+          const SizedBox(height: 14),
+          TextFormField(
+            controller: _paroquiaEnderecoController,
+            decoration: const InputDecoration(
+              labelText: 'Endereço da Paróquia',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.map_outlined),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _paroquiaCidadeUfController,
+                  decoration: const InputDecoration(
+                    labelText: 'Cidade / UF da Paróquia',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.location_city_outlined),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: TextFormField(
-                controller: _parocoController,
-                decoration: const InputDecoration(
-                  labelText: 'Nome do Pároco',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.person_pin_outlined),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextFormField(
+                  controller: _parocoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nome do Pároco',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.person_pin_outlined),
+                  ),
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 24),
+        ] else ...[
+          _buildSectionHeader(
+            colorScheme,
+            Icons.church_outlined,
+            'Vivência Eclesial (Vida Interna)',
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: colorScheme.outlineVariant),
             ),
-          ],
-        ),
-        const SizedBox(height: 24),
+            child: Text(
+              'Membros de Vida Interna pertencem à instituição e não possuem vínculo paroquial externo.',
+              style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
         _buildSectionHeader(
           colorScheme,
           Icons.volunteer_activism_outlined,
@@ -1492,7 +1784,7 @@ class _MemberEditPageState extends State<MemberEditPage>
           controller: _chamadoComunidadeAliancaController,
           maxLines: 2,
           decoration: const InputDecoration(
-            labelText: 'Chamado para a Comunidade de Aliança',
+            labelText: 'Chamado para a Instituição de Aliança',
             border: OutlineInputBorder(),
           ),
         ),
@@ -1521,40 +1813,149 @@ class _MemberEditPageState extends State<MemberEditPage>
           ],
         ),
 
-        // Autobiografia para Solteiros ou notas livres
+        // Autobiografia
         const SizedBox(height: 24),
         _buildSectionHeader(
           colorScheme,
           Icons.auto_stories_outlined,
           'Autobiografia & Notas Pessoais',
         ),
+        const SizedBox(height: 12),
+        SegmentedButton<int>(
+          segments: const [
+            ButtonSegment(
+              value: 0,
+              icon: Icon(Icons.edit_note_rounded),
+              label: Text('Texto por Tópicos'),
+            ),
+            ButtonSegment(
+              value: 1,
+              icon: Icon(Icons.attach_file_outlined),
+              label: Text('Arquivo Anexado'),
+            ),
+          ],
+          selected: {_autobioMode},
+          onSelectionChanged: (set) {
+            setState(() => _autobioMode = set.first);
+          },
+        ),
         const SizedBox(height: 16),
-        TextFormField(
-          controller: _autobiografiaHistoriaController,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            labelText: 'História Pessoal',
-            border: OutlineInputBorder(),
+        if (_autobioMode == 0) ...[
+          TextFormField(
+            controller: _autobiografiaHistoriaController,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'História Pessoal',
+              border: OutlineInputBorder(),
+            ),
           ),
-        ),
-        const SizedBox(height: 14),
-        TextFormField(
-          controller: _autobiografiaFamiliaController,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            labelText: 'Família de Origem',
-            border: OutlineInputBorder(),
+          const SizedBox(height: 14),
+          TextFormField(
+            controller: _autobiografiaFamiliaController,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Família de Origem',
+              border: OutlineInputBorder(),
+            ),
           ),
-        ),
-        const SizedBox(height: 14),
-        TextFormField(
-          controller: _autobiografiaIgrejaController,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            labelText: 'Caminhada na Igreja',
-            border: OutlineInputBorder(),
+          const SizedBox(height: 14),
+          TextFormField(
+            controller: _autobiografiaIgrejaController,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Caminhada na Igreja',
+              border: OutlineInputBorder(),
+            ),
           ),
-        ),
+        ] else ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: colorScheme.outlineVariant),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_autobioAnexoBase64 != null && _autobioAnexoBase64!.startsWith('data:image/')) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(
+                      base64Decode(_autobioAnexoBase64!.split(',').last),
+                      height: 180,
+                      width: double.infinity,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                Row(
+                  children: [
+                    Icon(
+                      _autobioAnexoBase64 != null && _autobioAnexoBase64!.startsWith('data:image/')
+                          ? Icons.image_outlined
+                          : Icons.picture_as_pdf,
+                      color: _autobioAnexoBase64 != null
+                          ? (_autobioAnexoBase64!.startsWith('data:image/') ? Colors.blue.shade700 : Colors.red.shade700)
+                          : colorScheme.onSurfaceVariant,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _autobioAnexoBase64 != null
+                                ? (_autobioAnexoNome ?? 'Arquivo Anexado')
+                                : 'Nenhum arquivo anexado',
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: _autobioAnexoBase64 != null ? Colors.green.shade800 : null,
+                            ),
+                          ),
+                          Text(
+                            _autobioAnexoBase64 != null
+                                ? 'Arquivo pronto para salvar'
+                                : 'Formatos aceitos: PDF (máx. 1MB) ou Imagem (máx. 3MB)',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    FilledButton.tonalIcon(
+                      onPressed: _pickAutobiografiaAnexo,
+                      icon: Icon(_autobioAnexoBase64 != null ? Icons.refresh : Icons.upload_file),
+                      label: Text(_autobioAnexoBase64 != null ? 'Trocar Arquivo' : 'Selecionar Arquivo (PDF ou Foto)'),
+                    ),
+                    if (_autobioAnexoBase64 != null) ...[
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _autobioAnexoBase64 = null;
+                            _autobioAnexoNome = null;
+                          });
+                        },
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        label: const Text('Remover'),
+                        style: TextButton.styleFrom(foregroundColor: colorScheme.error),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -1586,6 +1987,32 @@ class _MemberEditPageState extends State<MemberEditPage>
           'Enquadramento Institucional',
         ),
         const SizedBox(height: 16),
+
+        // Nomes adicionais para Vida Interna
+        if (_tipoVida == TipoVida.interna) ...[
+          _buildSectionHeader(colorScheme, Icons.badge_outlined, 'Nomes Adicionais (Vida Interna)'),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _nomeReligiosoController,
+            decoration: const InputDecoration(
+              labelText: 'Nome Religioso (Opcional)',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.church_outlined),
+              helperText: 'Nome adotado na vida religiosa/consagrada',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _nomeComercialController,
+            decoration: const InputDecoration(
+              labelText: 'Nome Comercial (Opcional)',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.business_outlined),
+              helperText: 'Nome profissional ou de trabalho',
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
 
         // 1. Tipo de Vida (SegmentedButton)
         Text(
@@ -1748,7 +2175,18 @@ class _MemberEditPageState extends State<MemberEditPage>
                 )
                 .toList(),
             onChanged: (val) {
-              if (val != null) setState(() => _role = val);
+              if (val != null) {
+                setState(() {
+                  final oldPrimary = _role;
+                  _role = val;
+                  // Mantém os perfis adicionais mas remove o antigo primário se não estava antes,
+                  // e garante que o novo primário está na lista
+                  final list = List<AppRole>.from(_roles);
+                  list.remove(oldPrimary); // remove old primary if it was auto-added
+                  if (!list.contains(val)) list.insert(0, val);
+                  _roles = list;
+                });
+              }
             },
           ),
         ] else ...[
@@ -1756,6 +2194,68 @@ class _MemberEditPageState extends State<MemberEditPage>
             'Seu perfil (${currentUserRole.displayName}) não tem permissão para alterar papéis de acesso.',
             style: TextStyle(color: colorScheme.error, fontSize: 13),
           ),
+        ],
+
+        // 5. Multi-perfis adicionais
+        if (allowedRoles.isNotEmpty && !targetIsFundador) ...[
+          const SizedBox(height: 24),
+          _buildSectionHeader(
+            colorScheme,
+            Icons.manage_accounts_outlined,
+            'Perfis Adicionais (Multi-Perfil)',
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Um membro pode ter mais de um perfil. O perfil principal acima define as permissões base.',
+            style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          ...allowedRoles.map((r) {
+            final isPrimary = r == _role;
+            final isSelected = _roles.contains(r);
+            return Card(
+              elevation: 0,
+              margin: const EdgeInsets.only(bottom: 8),
+              color: isSelected
+                  ? colorScheme.primaryContainer.withValues(alpha: 0.4)
+                  : colorScheme.surfaceContainerLow,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: BorderSide(
+                  color: isSelected ? colorScheme.primary : colorScheme.outlineVariant,
+                ),
+              ),
+              child: CheckboxListTile(
+                title: Text(
+                  r.displayName + (isPrimary ? ' (Perfil Principal)' : ''),
+                  style: TextStyle(
+                    fontWeight: isPrimary ? FontWeight.bold : FontWeight.normal,
+                    fontSize: 14,
+                  ),
+                ),
+                subtitle: Text(
+                  r.description,
+                  style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                ),
+                value: isSelected || isPrimary,
+                tristate: false,
+                controlAffinity: ListTileControlAffinity.leading,
+                onChanged: isPrimary
+                    ? null // Perfil principal não pode ser desmarcado
+                    : (val) {
+                        setState(() {
+                          final list = List<AppRole>.from(_roles);
+                          if (val == true) {
+                            if (!list.contains(r)) list.add(r);
+                          } else {
+                            list.remove(r);
+                          }
+                          _roles = list;
+                        });
+                      },
+              ),
+            );
+          }),
         ],
       ],
     );

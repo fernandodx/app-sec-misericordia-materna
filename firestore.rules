@@ -20,6 +20,7 @@ service cloud.firestore {
       return isFundador() || (
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in [
+          'secretaria_geral',
           'secretaria_geral_ext',
           'secretaria_geral_int',
           'secretaria_local'
@@ -30,10 +31,10 @@ service cloud.firestore {
     // Coleção de Usuários / Membros
     match /users/{userId} {
       allow read: if isAuthenticated();
-      // O próprio usuário pode criar seu documento, o Fundador tem poder total, ou parceiro vinculando
+      // O próprio usuário pode criar seu documento, Secretarias e Fundador podem criar diretamente sem convite, ou parceiro vinculando
       allow create: if isAuthenticated() && (
         request.auth.uid == userId ||
-        isFundador() ||
+        isSecretariaOrFundador() ||
         (
           request.resource.data.spouseId == request.auth.uid &&
           request.resource.data.isCasado == true
@@ -49,7 +50,11 @@ service cloud.firestore {
           request.resource.data.isCasado == true
         )
       );
-      allow delete: if isFundador();
+      // Fundador, Secretarias ou o próprio usuário (durante migração de cadastro prévio)
+      allow delete: if isAuthenticated() && (
+        isSecretariaOrFundador() ||
+        request.auth.uid == userId
+      );
     }
 
     // Coleção de Convites

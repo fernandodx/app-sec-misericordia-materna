@@ -9,6 +9,10 @@ class UserEntity {
   final String telefone;
   final String? fotoUrl;
   final AppRole role;
+  final List<AppRole> roles;
+  final bool isAtivo; // Se false, membro desativado (não aparece em buscas normais)
+  final String? nomeReligioso; // Para Vida Interna
+  final String? nomeComercial; // Para Vida Interna
   final TipoVida? tipoVida;
   final String? localidade; // BSB, AAX, UDI
   final String? supervisorId; // Formador ou Acompanhador responsável
@@ -88,6 +92,10 @@ class UserEntity {
     required this.telefone,
     this.fotoUrl,
     required this.role,
+    this.roles = const [],
+    this.isAtivo = true,
+    this.nomeReligioso,
+    this.nomeComercial,
     this.tipoVida,
     this.localidade,
     this.supervisorId,
@@ -145,6 +153,48 @@ class UserEntity {
     this.cadastroEtapa = 1,
   });
 
+  /// Lista unificada de perfis (garante pelo menos o papel principal)
+  List<AppRole> get activeRoles {
+    final list = roles.isNotEmpty ? List<AppRole>.from(roles) : <AppRole>[role];
+    if (!list.contains(role)) {
+      list.insert(0, role);
+    }
+    return list;
+  }
+
+  /// Verifica se o usuário possui determinado papel (seja como principal ou secundário)
+  bool hasRole(AppRole checkRole) {
+    return role == checkRole || roles.contains(checkRole);
+  }
+
+  /// Verifica se o usuário possui qualquer um dos papéis especificados
+  bool hasAnyRole(Iterable<AppRole> checkRoles) {
+    return checkRoles.any(hasRole);
+  }
+
+  bool get isFundador => hasRole(AppRole.fundador);
+  bool get isFormador => hasRole(AppRole.formador);
+  bool get isAcompanhador => hasRole(AppRole.acompanhador);
+  bool get isSecretariaGeral => hasRole(AppRole.secretariaGeral);
+  bool get isSecretariaLocal => hasRole(AppRole.secretariaLocal);
+  bool get isMembro => hasRole(AppRole.membro);
+  bool get isVisitante =>
+      (roles.isEmpty || (roles.length == 1 && roles.first == AppRole.visitante)) &&
+      role == AppRole.visitante;
+
+  bool get canManageInvites => isFundador || isSecretariaGeral || isSecretariaLocal;
+  bool get canSearchMembers => isFundador || isSecretariaGeral || isSecretariaLocal || isFormador;
+  bool get canCreateDirectMember => isFundador || isSecretariaGeral || isSecretariaLocal;
+  bool get canEditMemberInstitutional => canSearchMembers;
+  bool get canDeactivateOrDeleteMember => isFundador || isSecretariaGeral;
+  bool get canManageProfiles => isFundador || isSecretariaGeral;
+  bool get canAccessDashboard => !isVisitante;
+
+  String get rolesDisplayNames {
+    final list = activeRoles;
+    return list.map((r) => r.displayName).join(', ');
+  }
+
   UserEntity copyWith({
     String? id,
     String? email,
@@ -152,6 +202,10 @@ class UserEntity {
     String? telefone,
     String? fotoUrl,
     AppRole? role,
+    List<AppRole>? roles,
+    bool? isAtivo,
+    String? nomeReligioso,
+    String? nomeComercial,
     TipoVida? tipoVida,
     String? localidade,
     String? supervisorId,
@@ -215,6 +269,10 @@ class UserEntity {
       telefone: telefone ?? this.telefone,
       fotoUrl: fotoUrl ?? this.fotoUrl,
       role: role ?? this.role,
+      roles: roles ?? this.roles,
+      isAtivo: isAtivo ?? this.isAtivo,
+      nomeReligioso: nomeReligioso ?? this.nomeReligioso,
+      nomeComercial: nomeComercial ?? this.nomeComercial,
       tipoVida: tipoVida ?? this.tipoVida,
       localidade: localidade ?? this.localidade,
       supervisorId: supervisorId ?? this.supervisorId,

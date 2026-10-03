@@ -57,4 +57,11 @@ class UserRepositoryImpl implements UserRepository {
   @override
   Future<void> linkSpouse({required String userId, required String spouseId}) =>
       _dataSource.linkSpouse(userId: userId, spouseId: spouseId);
+
+  @override
+  Future<UserEntity> createDirectMember(UserEntity user) =>
+      _dataSource.createDirectMember(UserModel.fromEntity(user));
+
+  @override
+  Future<void> deleteUser(String userId) => _dataSource.deleteUser(userId);
 }

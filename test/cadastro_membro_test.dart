@@ -7,7 +7,9 @@ import 'package:app_secretaria/core/services/viacep_service.dart';
 import 'package:app_secretaria/core/utils/formatters.dart';
 import 'package:app_secretaria/core/utils/image_compressor.dart';
 import 'package:app_secretaria/data/models/user_model.dart';
-import 'package:app_secretaria/domain/entities/filho_entity.dart';
+import 'package:app_secretaria/domain/entities/user_entity.dart';
+import 'package:app_secretaria/domain/usecases/members/create_direct_member_usecase.dart';
+import 'package:app_secretaria/domain/repositories/user_repository.dart';
 
 void main() {
   group('ViaCepResult Tests', () {
@@ -381,8 +383,7 @@ void main() {
   group('Permissões e Escopo de Pesquisa de Membros', () {
     test('valida canSearchMembers de acordo com os papéis', () {
       expect(AppRole.fundador.canSearchMembers, isTrue);
-      expect(AppRole.secretariaGeralExterna.canSearchMembers, isTrue);
-      expect(AppRole.secretariaGeralInterna.canSearchMembers, isTrue);
+      expect(AppRole.secretariaGeral.canSearchMembers, isTrue);
       expect(AppRole.secretariaLocal.canSearchMembers, isTrue);
       expect(AppRole.formador.canSearchMembers, isTrue);
 
@@ -393,8 +394,7 @@ void main() {
 
     test('valida canEditMemberInstitutional de acordo com os papéis (mesma regra de canSearchMembers)', () {
       expect(AppRole.fundador.canEditMemberInstitutional, isTrue);
-      expect(AppRole.secretariaGeralExterna.canEditMemberInstitutional, isTrue);
-      expect(AppRole.secretariaGeralInterna.canEditMemberInstitutional, isTrue);
+      expect(AppRole.secretariaGeral.canEditMemberInstitutional, isTrue);
       expect(AppRole.secretariaLocal.canEditMemberInstitutional, isTrue);
       expect(AppRole.formador.canEditMemberInstitutional, isTrue);
 
@@ -406,42 +406,43 @@ void main() {
     test('regras de permissão para alteração de papéis (rolesPermitidasParaAtribuir)', () {
       // 1. Fundador pode nomear qualquer perfil, incluindo outro Fundador
       expect(AppRole.fundador.podeAtribuirRole(AppRole.fundador), isTrue);
-      expect(AppRole.fundador.podeAtribuirRole(AppRole.secretariaGeralExterna), isTrue);
+      expect(AppRole.fundador.podeAtribuirRole(AppRole.secretariaGeral), isTrue);
       expect(AppRole.fundador.rolesPermitidasParaAtribuir, containsAll(AppRole.values));
 
       // 2. Secretaria Geral e Formador podem alterar para qualquer uma, MENOS Fundador
       for (final role in [
-        AppRole.secretariaGeralExterna,
-        AppRole.secretariaGeralInterna,
+        AppRole.secretariaGeral,
         AppRole.formador,
       ]) {
         expect(role.podeAtribuirRole(AppRole.fundador), isFalse);
-        expect(role.podeAtribuirRole(AppRole.secretariaGeralExterna), isTrue);
+        expect(role.podeAtribuirRole(AppRole.secretariaGeral), isTrue);
         expect(role.podeAtribuirRole(AppRole.secretariaLocal), isTrue);
         expect(role.podeAtribuirRole(AppRole.membro), isTrue);
       }
 
       // 3. Secretaria Local pode mudar para todos os perfis abaixo de Secretaria Geral
       expect(AppRole.secretariaLocal.podeAtribuirRole(AppRole.fundador), isFalse);
-      expect(AppRole.secretariaLocal.podeAtribuirRole(AppRole.secretariaGeralExterna), isFalse);
-      expect(AppRole.secretariaLocal.podeAtribuirRole(AppRole.secretariaGeralInterna), isFalse);
+      expect(AppRole.secretariaLocal.podeAtribuirRole(AppRole.secretariaGeral), isFalse);
       expect(AppRole.secretariaLocal.podeAtribuirRole(AppRole.secretariaLocal), isTrue);
       expect(AppRole.secretariaLocal.podeAtribuirRole(AppRole.formador), isTrue);
       expect(AppRole.secretariaLocal.podeAtribuirRole(AppRole.membro), isTrue);
     });
 
     test('valida etapas da fraternidade de acordo com o Tipo de Vida', () {
-      // Vida Interna: 7 etapas (Aspirantado até Formador)
+      // Vida Interna: 9 etapas (Aspirantado até Família, incluindo Celibatários e Família)
       final etapasInterna = CadastroConstants.etapasPorTipoVida(TipoVida.interna);
-      expect(etapasInterna.length, equals(7));
+      expect(etapasInterna.length, equals(9));
       expect(etapasInterna.first, equals('Aspirantado'));
-      expect(etapasInterna.last, equals('Formador'));
+      expect(etapasInterna.contains('Celibatários'), isTrue);
+      expect(etapasInterna.contains('Família'), isTrue);
 
       // Vida Externa: 10 etapas (Vocacional 1º até Discípulo 5º)
       final etapasExterna = CadastroConstants.etapasPorTipoVida(TipoVida.externa);
       expect(etapasExterna.length, equals(10));
       expect(etapasExterna.first, equals('Vocacional 1º'));
       expect(etapasExterna.last, equals('Discípulo 5º'));
+      expect(etapasExterna.contains('Celibatários'), isFalse);
+      expect(etapasExterna.contains('Família'), isFalse);
     });
 
     test('Localidades.resolver identifica siglas, nomes e variações tolerantemente', () {
@@ -574,4 +575,118 @@ void main() {
       expect(fundadorTentaAlterarFundador, isFalse); // permitido!
     });
   });
+
+  group('Secretaria Geral Unificada & Criação Direta de Membro', () {
+    test('AppRole.fromKey mapeia chaves legadas e atual para AppRole.secretariaGeral', () {
+      expect(AppRole.fromKey('secretaria_geral'), equals(AppRole.secretariaGeral));
+      expect(AppRole.fromKey('secretaria_geral_ext'), equals(AppRole.secretariaGeral));
+      expect(AppRole.fromKey('secretaria_geral_int'), equals(AppRole.secretariaGeral));
+      expect(AppRole.secretariaGeral.isSecretariaGeral, isTrue);
+      expect(AppRole.secretariaGeral.isSecretariaGeralExterna, isTrue);
+      expect(AppRole.secretariaGeral.isSecretariaGeralInterna, isTrue);
+    });
+
+    test('permite criação direta de membros para Fundador, Secretaria Geral e Secretaria Local', () {
+      expect(AppRole.fundador.canCreateDirectMember, isTrue);
+      expect(AppRole.secretariaGeral.canCreateDirectMember, isTrue);
+      expect(AppRole.secretariaLocal.canCreateDirectMember, isTrue);
+
+      expect(AppRole.formador.canCreateDirectMember, isFalse);
+      expect(AppRole.membro.canCreateDirectMember, isFalse);
+      expect(AppRole.visitante.canCreateDirectMember, isFalse);
+      expect(AppRole.acompanhador.canCreateDirectMember, isFalse);
+    });
+
+    test('CreateDirectMemberUseCase valida campos obrigatórios (nome e e-mail)', () async {
+      final fakeRepo = _FakeUserRepository();
+      final usecase = CreateDirectMemberUseCase(fakeRepo);
+
+      // Nome vazio
+      final emptyNameUser = UserEntity(
+        id: '',
+        email: 'teste@email.com',
+        nome: '   ',
+        telefone: '',
+        role: AppRole.membro,
+        isEmailVerified: false,
+        isProfileComplete: false,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      final resEmptyName = await usecase(emptyNameUser);
+      expect(resEmptyName.isLeft(), isTrue);
+
+      // Email inválido
+      final invalidEmailUser = emptyNameUser.copyWith(nome: 'Nome Válido', email: 'emailinvalido');
+      final resInvalidEmail = await usecase(invalidEmailUser);
+      expect(resInvalidEmail.isLeft(), isTrue);
+
+      // Usuário válido
+      final validUser = emptyNameUser.copyWith(
+        nome: 'João da Silva',
+        email: 'joao.silva@misericordia.com',
+        tipoVida: TipoVida.interna,
+        etapaFraternidade: 'Celibatários',
+        nomePai: 'José da Silva',
+        nomeMae: 'Maria da Silva',
+      );
+      final resValid = await usecase(validUser);
+      expect(resValid.isRight(), isTrue);
+      resValid.fold(
+        (_) => fail('Deveria ser sucesso'),
+        (created) {
+          expect(created.id, equals('mock-created-id'));
+          expect(created.nome, equals('João da Silva'));
+          expect(created.etapaFraternidade, equals('Celibatários'));
+          expect(created.nomePai, equals('José da Silva'));
+          expect(created.nomeMae, equals('Maria da Silva'));
+        },
+      );
+    });
+  });
+}
+
+class _FakeUserRepository implements UserRepository {
+  @override
+  Future<UserEntity> createDirectMember(UserEntity user) async {
+    return user.copyWith(id: 'mock-created-id');
+  }
+
+  @override
+  Future<UserEntity> bootstrapOrCreateUser({
+    required String uid,
+    required String email,
+    String? displayName,
+    String? photoUrl,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<List<UserEntity>> getAllUsers() => throw UnimplementedError();
+
+  @override
+  Future<UserEntity?> getUserByEmail(String email) => throw UnimplementedError();
+
+  @override
+  Future<UserEntity?> getUserById(String id) => throw UnimplementedError();
+
+  @override
+  Future<void> linkSpouse({required String userId, required String spouseId}) => throw UnimplementedError();
+
+  @override
+  Future<void> saveUser(UserEntity user) => throw UnimplementedError();
+
+  @override
+  Future<void> saveUserPartial(String userId, Map<String, dynamic> data) => throw UnimplementedError();
+
+  @override
+  Future<List<UserEntity>> searchUsersByName(String query, {String? excludeUserId}) => throw UnimplementedError();
+
+  @override
+  Future<void> updateUser(UserEntity user) => throw UnimplementedError();
+
+  @override
+  Stream<UserEntity?> userStream(String id) => throw UnimplementedError();
+
+  @override
+  Future<void> deleteUser(String userId) => throw UnimplementedError();
 }

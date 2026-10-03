@@ -5,6 +5,7 @@ import '../../../core/constants/app_routes.dart';
 import '../../../core/constants/localidades.dart';
 import '../../signals/auth_signal.dart';
 
+import '../../widgets/create_member_dialog.dart';
 import '../../widgets/theme_selector_widget.dart';
 
 class HomeDashboardPage extends StatelessWidget {
@@ -393,10 +394,36 @@ class HomeDashboardPage extends StatelessWidget {
                                 style: TextStyle(fontWeight: FontWeight.bold),
                               ),
                               subtitle: const Text(
-                                'Consulte fichas cadastrais, contatos, etapas do caminho e vida comunitária',
+                                'Consulte fichas cadastrais, contatos, etapas do caminho e vida institucional',
                               ),
                               trailing: const Icon(Icons.chevron_right),
                               onTap: () => context.push(AppRoutes.memberSearch),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        if (role.canCreateDirectMember) ...[
+                          Card(
+                            elevation: 0,
+                            color: colorScheme.surfaceContainerLow,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: BorderSide(color: colorScheme.outlineVariant),
+                            ),
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: colorScheme.tertiary,
+                                child: Icon(Icons.person_add_alt_1, color: colorScheme.onTertiary, size: 20),
+                              ),
+                              title: const Text(
+                                'Cadastrar Novo Membro',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: const Text(
+                                'Cadastre membros diretamente no sistema sem necessidade de convite',
+                              ),
+                              trailing: const Icon(Icons.chevron_right),
+                              onTap: () => CreateMemberDialog.show(context),
                             ),
                           ),
                           const SizedBox(height: 12),
@@ -497,13 +524,11 @@ class HomeDashboardPage extends StatelessWidget {
         description = 'Acompanhamento e formação pastoral exclusiva dos membros atribuídos a você em Vida Externa.';
         icon = Icons.handshake_rounded;
         break;
+      case 'secretaria_geral':
       case 'secretaria_geral_ext':
-        description = 'Acesso cadastral geral aos membros de Vida Externa e atribuição de acompanhadores.';
-        icon = Icons.assignment_ind_rounded;
-        break;
       case 'secretaria_geral_int':
-        description = 'Acesso cadastral aos membros de Vida Interna e atribuição de formadores.';
-        icon = Icons.assignment_ind_outlined;
+        description = 'Gestão cadastral geral da Fraternidade (Vida Interna e Vida Externa).';
+        icon = Icons.assignment_ind_rounded;
         break;
       case 'secretaria_local':
         description = 'Gestão de membros e acompanhadores da sua Fraternidade Local.';

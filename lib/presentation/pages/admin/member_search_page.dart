@@ -8,6 +8,7 @@ import '../../../core/constants/localidades.dart';
 import '../../../domain/entities/user_entity.dart';
 import '../../signals/auth_signal.dart';
 import '../../signals/member_search_signal.dart';
+import '../../widgets/create_member_dialog.dart';
 import '../../widgets/member_detail_dialog.dart';
 import '../../widgets/theme_selector_widget.dart';
 import 'member_edit_page.dart';
@@ -68,6 +69,103 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
     }
   }
 
+  Future<void> _confirmarDesativar(BuildContext context, UserEntity member) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Desativar Membro'),
+        content: Text(
+          'Deseja desativar "${member.nome}"?\n\n'
+          'O membro não aparecerá mais nas buscas e não terá acesso ao sistema. '
+          'Essa ação pode ser revertida manualmente no banco de dados.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.orange),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Desativar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final ok = await memberSearchSignal.deactivateMember(member.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(ok
+                ? 'Membro "${member.nome}" desativado com sucesso.'
+                : memberSearchSignal.errorMessage.value ?? 'Erro ao desativar membro.'),
+            backgroundColor: ok ? Colors.green : Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmarExcluir(BuildContext context, UserEntity member) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.warning_rounded, color: Colors.red),
+            const SizedBox(width: 8),
+            const Text('Excluir Definitivamente'),
+          ],
+        ),
+        content: Text(
+          'Tem certeza que deseja EXCLUIR PERMANENTEMENTE "${member.nome}"?\n\n'
+          'Esta ação é IRREVERSÍVEL. Todos os dados cadastrais serão perdidos.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Excluir Definitivamente'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final ok = await memberSearchSignal.deleteMember(member.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(ok
+                ? 'Membro "${member.nome}" excluído definitivamente.'
+                : memberSearchSignal.errorMessage.value ?? 'Erro ao excluir membro.'),
+            backgroundColor: ok ? Colors.green : Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _reativarMembro(BuildContext context, UserEntity member) async {
+    final ok = await memberSearchSignal.reactivateMember(member.id);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok
+              ? 'Membro "${member.nome}" reativado com sucesso.'
+              : memberSearchSignal.errorMessage.value ?? 'Erro ao reativar membro.'),
+          backgroundColor: ok ? Colors.green : Colors.redAccent,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -125,6 +223,12 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
             elevation: 1,
             actions: [
               const ThemeSelectorButton(),
+              if (currentUser.role.canCreateDirectMember)
+                IconButton(
+                  tooltip: 'Cadastrar Novo Membro',
+                  icon: const Icon(Icons.person_add_alt_1),
+                  onPressed: () => CreateMemberDialog.show(context),
+                ),
               IconButton(
                 tooltip: 'Recarregar membros',
                 icon: const Icon(Icons.refresh),
@@ -143,6 +247,36 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
                     // Header & Security Scoping Notice
                     _buildRoleScopeBanner(colorScheme, currentUser),
                     const SizedBox(height: 20),
+
+                    // Toggle Membros Ativos / Desativados (só para quem pode desativar)
+                    if (currentUser.canDeactivateOrDeleteMember) ...[
+                      Row(
+                        children: [
+                          const Icon(Icons.filter_list, size: 16),
+                          const SizedBox(width: 8),
+                          const Text('Exibir: ', style: TextStyle(fontWeight: FontWeight.w600)),
+                          const SizedBox(width: 4),
+                          ChoiceChip(
+                            label: const Text('Membros Ativos'),
+                            selected: !memberSearchSignal.filterInactive.value,
+                            onSelected: (_) {
+                              memberSearchSignal.filterInactive.value = false;
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          ChoiceChip(
+                            avatar: const Icon(Icons.block_outlined, size: 16),
+                            label: const Text('Desativados'),
+                            selected: memberSearchSignal.filterInactive.value,
+                            selectedColor: colorScheme.errorContainer,
+                            onSelected: (_) {
+                              memberSearchSignal.filterInactive.value = true;
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                    ],
 
                     // Filters & Search Card
                     _buildFiltersCard(colorScheme, currentUser),
@@ -200,6 +334,13 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
               ),
             ),
           ),
+          floatingActionButton: currentUser.role.canCreateDirectMember
+              ? FloatingActionButton.extended(
+                  onPressed: () => CreateMemberDialog.show(context),
+                  icon: const Icon(Icons.person_add_alt_1),
+                  label: const Text('Novo Membro'),
+                )
+              : null,
         );
       },
     );
@@ -216,15 +357,10 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
         scopeDesc = 'Você possui acesso total para visualizar e filtrar todos os membros em todas as fraternidades.';
         icon = Icons.admin_panel_settings;
         break;
-      case AppRole.secretariaGeralExterna:
-        scopeTitle = 'Escopo Secretaria Geral (Vida Externa)';
-        scopeDesc = 'Acesso restrito exclusivamente aos membros que pertencem ao Tipo de Vida Externa.';
-        icon = Icons.wb_sunny_outlined;
-        break;
-      case AppRole.secretariaGeralInterna:
-        scopeTitle = 'Escopo Secretaria Geral (Vida Interna)';
-        scopeDesc = 'Acesso restrito exclusivamente aos membros que pertencem ao Tipo de Vida Interna.';
-        icon = Icons.nightlight_round_outlined;
+      case AppRole.secretariaGeral:
+        scopeTitle = 'Escopo Secretaria Geral (Vida Geral - Interna & Externa)';
+        scopeDesc = 'Acesso geral para acompanhamento e gestão dos membros de Vida Interna e Vida Externa.';
+        icon = Icons.admin_panel_settings_outlined;
         break;
       case AppRole.secretariaLocal:
         final loc = Localidades.porSigla(currentUser.localidade);
@@ -289,9 +425,7 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
     final filterEtapa = memberSearchSignal.filterEtapa.value;
     final filterCasado = memberSearchSignal.filterCasado.value;
 
-    final isTipoVidaLocked = currentUser.role == AppRole.secretariaGeralExterna ||
-        currentUser.role == AppRole.secretariaGeralInterna ||
-        currentUser.role == AppRole.formador;
+    final isTipoVidaLocked = currentUser.role == AppRole.formador;
 
     final isLocalidadeLocked = currentUser.role == AppRole.secretariaLocal;
 
@@ -724,6 +858,54 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
                       ),
                       icon: const Icon(Icons.edit_outlined, size: 16),
                       label: const Text('Editar'),
+                    ),
+                  if (authSignal.currentUser.value?.canDeactivateOrDeleteMember ?? false)
+                    PopupMenuButton<String>(
+                      tooltip: 'Mais ações',
+                      icon: const Icon(Icons.more_vert, size: 20),
+                      onSelected: (value) async {
+                        if (value == 'deactivate') {
+                          _confirmarDesativar(context, member);
+                        } else if (value == 'reactivate') {
+                          _reativarMembro(context, member);
+                        } else if (value == 'delete') {
+                          _confirmarExcluir(context, member);
+                        }
+                      },
+                      itemBuilder: (_) => [
+                        if (member.isAtivo)
+                          const PopupMenuItem(
+                            value: 'deactivate',
+                            child: Row(
+                              children: [
+                                Icon(Icons.block_outlined, size: 18, color: Colors.orange),
+                                SizedBox(width: 8),
+                                Text('Desativar Membro'),
+                              ],
+                            ),
+                          )
+                        else
+                          const PopupMenuItem(
+                            value: 'reactivate',
+                            child: Row(
+                              children: [
+                                Icon(Icons.check_circle_outline, size: 18, color: Colors.green),
+                                SizedBox(width: 8),
+                                Text('Reativar Membro', style: TextStyle(color: Colors.green)),
+                              ],
+                            ),
+                          ),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete_forever_outlined, size: 18, color: Colors.red),
+                              SizedBox(width: 8),
+                              Text('Excluir Definitivamente', style: TextStyle(color: Colors.red)),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                 ],
               ),

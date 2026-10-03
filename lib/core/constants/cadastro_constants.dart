@@ -2,9 +2,33 @@ import 'app_roles.dart';
 
 class CadastroConstants {
   static const List<String> estadosBrasil = [
-    'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
-    'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
-    'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
+    'AC',
+    'AL',
+    'AP',
+    'AM',
+    'BA',
+    'CE',
+    'DF',
+    'ES',
+    'GO',
+    'MA',
+    'MT',
+    'MS',
+    'MG',
+    'PA',
+    'PB',
+    'PR',
+    'PE',
+    'PI',
+    'RJ',
+    'RN',
+    'RS',
+    'RO',
+    'RR',
+    'SC',
+    'SP',
+    'SE',
+    'TO',
   ];
 
   static const List<String> escolaridades = [
@@ -39,10 +63,13 @@ class CadastroConstants {
     'Aspirantado',
     'Postulantado I',
     'Postulantado II',
-    'Noviciado I',
-    'Noviciado II',
-    'Consagrado',
+    'Noviciado Apostólico',
+    'Noviciado Canônico',
+    'Professo Simples',
+    'Professo Perpétuo',
     'Formador',
+    'Celibatários',
+    'Família',
   ];
 
   /// Retorna as etapas correspondentes de acordo com o Tipo de Vida
@@ -53,4 +80,3 @@ class CadastroConstants {
     return etapasVidaExterna;
   }
 }
-
